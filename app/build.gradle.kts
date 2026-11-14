@@ -13,7 +13,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "app.okkhor.keyboard"
+    applicationId = "com.app.okkhorkeyboard"
     minSdk = 24
     targetSdk = 36
     versionCode = 2
