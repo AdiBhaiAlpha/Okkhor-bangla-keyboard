@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">অক্ষর কিবোর্ড</string>
+    <string name="ime_name">অক্ষর বাংলা কিবোর্ড</string>
+    <string name="app_name_bengali">অক্ষর বাংলা কিবোর্ড</string>
+    <string name="developer_name">চিত্রন ভট্টাচার্য্য (Chitron Bhattacharjee)</string>
+    <string name="app_version">১.০.১</string>
+
+    <!-- Subtypes -->
+    <string name="subtype_bangla_phonetic">বাংলা (ফোনেটিক)</string>
+    <string name="subtype_bangla_fixed">বাংলা (জাতীয় / ফিক্সড)</string>
+    <string name="subtype_english">ইংরেজি</string>
+
+    <!-- Navigation Tabs -->
+    <string name="nav_home">হোম</string>
+    <string name="nav_themes">থিমস</string>
+    <string name="nav_input">ইনপুট</string>
+    <string name="nav_typing">টাইপিং</string>
+    <string name="nav_more">অন্যান্য</string>
+
+    <!-- Setup / Onboarding -->
+    <string name="setup_title">অক্ষর কিবোর্ড চালু করুন</string>
+    <string name="setup_subtitle">দ্রুত, সাবলীল ও শতভাগ নিরাপদ বাংলা টাইপিং</string>
+    <string name="step_1_title">১. কিবোর্ড সক্রিয় করুন</string>
+    <string name="step_1_desc">অ্যান্ড্রয়েড সিস্টেম সেটিংসে অক্ষর বাংলা কিবোর্ড অন করুন</string>
+    <string name="step_1_button">সেটিংসে অন করুন</string>
+    <string name="step_2_title">২. কিবোর্ড নির্বাচন করুন</string>
+    <string name="step_2_desc">আপনার ডিফল্ট কিবোর্ড হিসেবে অক্ষর কিবোর্ড বেছে নিন</string>
+    <string name="step_2_button">কিবোর্ড সুইচ করুন</string>
+    <string name="step_done">কিবোর্ড প্রস্তুত!</string>
+    <string name="step_enabled">সক্রিয়</string>
+    <string name="step_active">ডিফল্ট নির্বাচিত</string>
+    <string name="test_typing_title">টাইপিং পরীক্ষা করুন</string>
+    <string name="test_typing_hint">এখানে বাংলা বা ইংরেজিতে টাইপ করে দেখুন...</string>
+
+    <!-- Themes -->
+    <string name="theme_studio_title">থিম স্টুডিও</string>
+    <string name="theme_presets">রেডিমেড থিম</string>
+    <string name="theme_classic_bangla">ক্লাসিক টিল ও সোনালী</string>
+    <string name="theme_midnight_dark">মিডনাইট ডার্ক</string>
+    <string name="theme_minimal_light">সাদা মিনিমাল</string>
+    <string name="theme_sunset_orange">সানসেট অ্যাম্বার</string>
+    <string name="theme_high_contrast">হাই কনট্রাস্ট OLED</string>
+    <string name="theme_emerald">অক্ষর এমারেল্ড</string>
+    <string name="theme_custom">কাস্টম থিম</string>
+
+    <!-- Layout & Input Options -->
+    <string name="input_settings_title">ইনপুট ও লেআউট</string>
+    <string name="pref_default_mode">ডিফল্ট ইনপুট মোড</string>
+    <string name="mode_phonetic">বাংলা ফোনেটিক (অভ্র স্টাইল)</string>
+    <string name="mode_fixed">বাংলা ফিক্সড (জাতীয় / প্রভাত)</string>
+    <string name="mode_english">ইংরেজি কোয়ার্টি</string>
+    <string name="pref_show_number_row">সর্বদা সংখ্যার সারি দেখান</string>
+    <string name="pref_show_number_row_desc">কিবোর্ডের শীর্ষে আলাদা সংখ্যার লাইন প্রদর্শন করুন</string>
+    <string name="pref_show_suggestions">পরামর্শ ও শব্দ সংকেত</string>
+    <string name="pref_show_suggestions_desc">ফোনেটিক পরামর্শ ও পরবর্তী শব্দের সম্ভাব্য তালিকা</string>
+    <string name="pref_autocorrect">স্বয়ংক্রিয় সংশোধন (অটোকরেক্ট)</string>
+    <string name="pref_autocorrect_desc">টাইপিংয়ের ছোটখাটো ভুল স্বয়ংক্রিয়ভাবে সংশোধন</string>
+    <string name="pref_vibration">কী চাপলে কম্পন (হ্যাপটিক)</string>
+    <string name="pref_vibration_desc">প্রতিটি বোতাম স্পর্শে মৃদু ভাইব্রেশন</string>
+    <string name="pref_sound">কী চাপলে শব্দ</string>
+    <string name="pref_sound_desc">কী স্পর্শে মৃদু ক্লিক শব্দ</string>
+    <string name="pref_key_popup">কী পপআপ প্রিভিউ</string>
+    <string name="pref_key_popup_desc">কী স্পর্শ করার সময় অক্ষরের বড় প্রিভিউ</string>
+    <string name="pref_space_swipe">স্পেসবারে সোয়াইপ করে কার্সর সরানো</string>
+    <string name="pref_space_swipe_desc">স্পেসবারে বামে বা ডানে আঙুল টেনে কার্সর সরান</string>
+
+    <!-- Dimensions & Appearance -->
+    <string name="pref_keyboard_height">কিবোর্ডের উচ্চতা</string>
+    <string name="pref_key_corner_radius">কী কোণার গোলাকার মাত্রা</string>
+    <string name="pref_key_elevation">কী শ্যাডো ও এলিভেশন</string>
+
+    <!-- Clipboard & Shortcuts -->
+    <string name="clipboard_title">ক্লিপবোর্ড ম্যানেজার</string>
+    <string name="clipboard_opt_in">ক্লিপবোর্ড ইতিহাস সংরক্ষণ</string>
+    <string name="clipboard_opt_in_desc">কপিকৃত লেখা দ্রুত ব্যবহারের জন্য ডিভাইসে জমা রাখুন</string>
+    <string name="clipboard_privacy_notice">পাসওয়ার্ড বা গোপন তথ্য কখনো সংরক্ষিত হয় না। তথ্য শুধু আপনার ফোনে থাকে।</string>
+    <string name="clipboard_clear_all">সব ইতিহাস মুছে ফেলুন</string>
+    <string name="clipboard_empty">কোনো কপি করা তথ্য নেই</string>
+
+    <!-- Text Shortcuts -->
+    <string name="shortcuts_title">সংক্ষিপ্ত বাক্য ও শর্টকাট</string>
+    <string name="shortcuts_desc">ছোট কোড লিখলে তা দ্রুত পূর্ণ বাক্যে রূপান্তর হবে</string>
+    <string name="add_shortcut">নতুন শর্টকাট যোগ করুন</string>
+    <string name="shortcut_trigger">শর্টকাট (যেমনঃ shb)</string>
+    <string name="shortcut_expansion">পূর্ণ বাক্য (যেমনঃ শুভ সকাল!)</string>
+
+    <!-- Privacy -->
+    <string name="privacy_title">গোপনীয়তা ও নিরাপত্তা</string>
+    <string name="privacy_badge_offline">প্রাইভেসি-ফার্স্ট সুরক্ষা</string>
+    <string name="privacy_summary">অক্ষর বাংলা কিবোর্ড আপনার টাইপিং, শর্টকাট এবং ক্লিপবোর্ড ইতিহাস শুধু ডিভাইসে সংরক্ষণ করে এবং কোনো ইন্টারনেট পারমিশন ব্যবহার করে না। ভয়েস টাইপিং বোতাম চাপলেই কেবল সিস্টেম স্পিচ সার্ভিসের জন্য ঐচ্ছিক মাইক্রোফোন অনুমতি ব্যবহার হয়।</string>
+    <string name="privacy_password_policy">সংবেদনশীল ইনপুট সুরক্ষা: পাসওয়ার্ড বা ক্রেডিট কার্ড ফিল্ডে কোনো অটোকরেক্ট, সাজেশন, পপআপ বা ক্লিপবোর্ড রেকর্ড হয় না।</string>
+
+    <!-- About -->
+    <string name="about_title">অক্ষর সম্পর্কে</string>
+    <string name="about_developed_by">নির্মাতা: %1$s</string>
+    <string name="about_description">অক্ষর বাংলা কিবোর্ড একটি আধুনিক, দ্রুত এবং সম্পূর্ণ অফলাইন অ্যান্ড্রয়েড কিবোর্ড।</string>
+    <string name="about_reset_all">সব সেটিংস ডিফল্ট করুন</string>
+    <string name="about_reset_confirm">আপনি কি নিশ্চিত যে সমস্ত থিম ও সেটিংস মুছে ডিফল্ট অবস্থায় ফিরিয়ে নিতে চান?</string>
+    <string name="confirm">নিশ্চিত করুন</string>
+    <string name="cancel">বাতিল</string>
+    <string name="save">সংরক্ষণ</string>
+    <string name="delete">মুছে ফেলুন</string>
+    <string name="reset">রিসেট</string>
+</resources>

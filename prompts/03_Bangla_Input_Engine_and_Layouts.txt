@@ -1,0 +1,73 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 3 OF 10: BANGLA INPUT ENGINE, LAYOUTS, AND LANGUAGE SUPPORT
+
+BANGLA INPUT IS THE CORE FEATURE
+Implement a reliable Bangla typing experience. Do not merely place Bengali glyphs on keys. The engine must handle Bangla Unicode composition, conjuncts, vowel signs, reph, hasanta/virama, nukta where relevant, and editor cursor behavior correctly.
+
+INPUT MODES
+Offer clearly labeled input modes where technically feasible:
+1. Bangla phonetic / transliteration typing.
+2. Direct Bangla character layout.
+3. English QWERTY.
+4. Optional numeric/symbol layout.
+5. User-customizable layouts.
+
+PHONETIC ENGINE
+Build a modular transliteration engine:
+- Convert Latin input sequences into Bangla candidates.
+- Support common Bangla phonetic conventions.
+- Handle multi-character mappings and ambiguity.
+- Provide candidate selection and correction.
+- Allow users to choose between competing transliteration conventions where feasible.
+- Preserve the typed Latin sequence when the user rejects a conversion.
+- Support backspace inside an active composition without corrupting the text.
+- Support committing a candidate and continuing to type.
+- Avoid converting text unexpectedly after punctuation or whitespace.
+- Include a clear way to turn transliteration off temporarily.
+
+Do not claim perfect transliteration. Provide a test corpus of common words, names, sentences, and edge cases. Keep the mapping table configurable and documented.
+
+UNICODE / COMPOSITION
+- Use Unicode Bengali text and valid Unicode code points.
+- Respect combining marks and grapheme clusters.
+- Avoid deleting half of a conjunct or leaving orphaned vowel signs.
+- Backspace should remove a logical grapheme or composition unit when appropriate.
+- Test cursor movement, selection, replacing selected text, and insertion in the middle of existing text.
+- Handle emoji and mixed Bangla-English text without damaging surrounding content.
+- Test text fields with different inputType/editorInfo values.
+- Support newline, punctuation, and selection actions appropriately.
+
+LAYOUTS
+Provide:
+- Standard Bangla layout.
+- Phonetic layout.
+- English QWERTY layout.
+- Numbers and symbols.
+- Secondary symbols page.
+- Emoji access panel if included.
+- Custom layout editor (advanced).
+
+Layout customization should include:
+- Key order and key labels.
+- Key width and height.
+- Row spacing.
+- Key spacing.
+- Bottom-row configuration.
+- Language switch key location.
+- Backspace / enter / shift behavior.
+- Restore default layout.
+- Export/import layouts in a safe format.
+
+LANGUAGE SWITCHING
+- Easy Bangla-English toggle.
+- Gesture or long-press switching only if user enables it.
+- Show current mode clearly.
+- Do not accidentally switch language while the user is typing.
+- Remember preferred mode per keyboard session and optionally per app, with explicit user consent.
+
+BENGALI TYPOGRAPHY
+- Use fonts with proper Bengali shaping.
+- Verify vowel signs, conjuncts, reph, and punctuation in keycaps and candidate strip.
+- Do not use decorative fonts for the actual typing UI if they reduce legibility.
+- Provide font-size controls and a fallback font strategy.
+- Verify rendering on multiple Android versions and devices.

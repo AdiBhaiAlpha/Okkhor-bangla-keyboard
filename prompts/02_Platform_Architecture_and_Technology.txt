@@ -1,0 +1,79 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 2 OF 10: PLATFORM, ARCHITECTURE, AND ENGINEERING STACK
+
+ANDROID IME REQUIREMENTS
+Implement the keyboard as a genuine Android Input Method Service (IME), not as a normal overlay pretending to be a keyboard. Use Android’s supported InputMethodService APIs and manifest declarations. Follow current Android lifecycle and security guidance.
+
+TECH STACK
+Prefer:
+- Kotlin.
+- Android Studio / Gradle with a stable compatible Android Gradle Plugin.
+- Jetpack components where appropriate.
+- View-based keyboard rendering or Compose only where IME integration is demonstrably stable. Do not choose a UI toolkit merely for trendiness.
+- DataStore Preferences for simple settings.
+- Room only if structured local data such as dictionaries, user lexicon, or phrase collections needs it.
+- Coroutines and Flow for asynchronous work.
+- Android resource localization for English and Bengali.
+- Unit tests, instrumentation tests, and UI tests.
+
+Do not use obsolete or deprecated APIs without a clear compatibility reason. Check current official Android documentation before relying on behavior that may have changed.
+
+PROJECT STRUCTURE
+Create a maintainable structure similar to:
+- app/
+  - src/main/
+    - java/.../okkhor/
+      - ime/ (InputMethodService, input connection, lifecycle)
+      - keyboard/ (keyboard view, key models, rendering, gestures)
+      - input/ (Bangla transliteration, composition, editor handling)
+      - suggestion/ (candidate engine, ranking)
+      - settings/ (settings screens and state)
+      - themes/ (theme models and renderer)
+      - dictionary/ (local dictionary and user words)
+      - clipboard/ (clipboard history, if enabled)
+      - shortcuts/ (text expansion)
+      - privacy/ (privacy controls and disclosures)
+      - storage/ (DataStore, Room repositories)
+      - accessibility/
+      - diagnostics/
+      - util/
+    - res/
+      - layout/
+      - drawable/
+      - values/
+      - values-bn/
+      - xml/
+- tests/
+- docs/
+
+ARCHITECTURAL RULES
+- Keep IME service lifecycle logic separate from keyboard UI.
+- Avoid giant classes and global mutable state.
+- Use explicit state models for keyboard settings and active layout.
+- Ensure a setting change is reflected in the keyboard without requiring a reinstall.
+- Use repositories for persistence.
+- Handle configuration changes, service recreation, and process death.
+- Do not assume the app’s Activity remains alive while the keyboard is active.
+- Do not retain Activity or InputConnection references beyond their valid lifecycle.
+- Never run expensive dictionary searches or layout calculations on the main thread.
+- Keep key event processing lightweight.
+- Add sensible timeouts and cancellation to asynchronous operations.
+
+ANDROID COMPATIBILITY
+Set minSdk and targetSdk based on a deliberate compatibility decision, and document it. Target a current stable Android API available in the development environment. Test the oldest supported Android version and recent versions. Account for manufacturer differences and IME settings behavior.
+
+DEPENDENCY POLICY
+- Use stable, maintained dependencies.
+- Avoid dependency bloat.
+- Pin versions or use a version catalog.
+- Avoid unnecessary network libraries.
+- Verify license compatibility for all external code, fonts, dictionaries, and assets.
+- Never copy proprietary keyboard code or copyrighted dictionaries without permission.
+
+BUILD QUALITY
+- Clean build from a fresh checkout.
+- No hidden local-only dependencies.
+- No missing resources.
+- No hard-coded absolute paths.
+- Gradle build should be reproducible as far as practical.
+- Document required Java/JDK version and build commands.

@@ -1,0 +1,93 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 9 OF 10: BUILD, RELEASE, DOCUMENTATION, AND OPERATIONS
+
+BUILD REQUIREMENTS
+Deliver a complete Android Studio project that builds from a clean checkout.
+Include:
+- Gradle wrapper.
+- Gradle configuration.
+- Kotlin source.
+- Manifest.
+- Resources.
+- Icons.
+- Fonts and licenses.
+- Dictionaries / mapping resources with license information.
+- Unit and instrumentation tests.
+- README.
+- Privacy policy.
+- Third-party notices.
+- Release build instructions.
+- Debug build instructions.
+
+APK / AAB
+- Provide a debug APK for local testing.
+- Provide a release APK and/or Android App Bundle if the build environment permits.
+- Do not claim a build was successful unless the build command completed successfully.
+- If signing credentials are unavailable, provide an unsigned release build and explain signing steps.
+- Never embed signing passwords or keystore files in source control.
+- Verify APK size and contents.
+- Confirm app launches and IME can be enabled.
+- Do not deliver a tiny APK missing assets or essential functionality.
+- Inspect APK contents and verify resources are packaged.
+
+VERSIONING
+Use semantic versioning or a clearly documented version scheme:
+- versionName.
+- versionCode.
+- Release notes.
+- Migration notes for settings changes.
+- Database migration strategy if Room is used.
+
+DOCUMENTATION
+README must include:
+1. Product overview.
+2. Feature list with implemented / partial / planned status.
+3. Build prerequisites.
+4. Build commands.
+5. Installation instructions.
+6. How to enable the keyboard.
+7. How to set it as default.
+8. Troubleshooting.
+9. Privacy and permissions.
+10. Architecture.
+11. Testing.
+12. Known limitations.
+13. Developer attribution.
+14. Third-party licenses.
+
+RELEASE CHECKLIST
+- Clean build passes.
+- Tests pass.
+- No critical or high-severity unresolved issues.
+- Keyboard activates and types Bangla.
+- English mode works.
+- Language switching works.
+- Theme customization persists.
+- Settings persist.
+- Sensitive fields are protected.
+- Privacy disclosure is accurate.
+- No unnecessary permissions.
+- App icon and launcher label are correct.
+- Bengali strings render correctly.
+- APK/AAB installs on target devices.
+- Release notes are complete.
+
+CI
+If feasible, add GitHub Actions or another CI workflow:
+- Gradle build.
+- Unit tests.
+- Lint.
+- Artifact upload.
+- Dependency checks.
+Do not add CI secrets unless required. Do not expose secrets in logs.
+
+DELIVERY
+Provide:
+- Source project.
+- APK/AAB if generated.
+- Test report.
+- Build log summary.
+- Known limitations.
+- List of features actually implemented.
+- Exact commands to rebuild.
+- Clear instructions for the user to install and enable the keyboard.

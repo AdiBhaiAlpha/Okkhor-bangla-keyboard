@@ -1,0 +1,51 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 1 OF 10: PROJECT VISION, IDENTITY, AND PRODUCT REQUIREMENTS
+
+Project name: Okkhor Bangla Keyboard (অক্ষর বাংলা কিবোর্ড)
+Developer / Product Owner: Chitron Bhattacharjee
+Platform target: Android first; architecture should permit future iOS/desktop ports where practical.
+Product category: Bangla-specialized, multilingual, highly customizable keyboard / Input Method Editor (IME).
+
+ROLE
+Act as a senior Android engineer, keyboard/IME specialist, UX designer, accessibility engineer, QA lead, security engineer, and release manager. Build a complete, stable, polished, production-ready Android keyboard application—not a demo, mockup, or static UI.
+
+PRODUCT VISION
+Create a Bangla-first keyboard that feels fast, expressive, reliable, and deeply configurable. Users should be able to control the keyboard’s appearance, layout, typing behavior, language switching, suggestions, shortcuts, privacy settings, and advanced features. Bangla input must be treated as a first-class experience, not as an afterthought attached to an English keyboard.
+
+Core promise:
+1. Bangla typing should be convenient, predictable, and accurate.
+2. Customization should be extensive without making the app confusing.
+3. The keyboard must work across ordinary Android text fields and apps.
+4. Privacy should be clear and user-controlled.
+5. The product must not claim “impossible bugs” or “zero bugs.” Instead, design defensively, test thoroughly, track known limitations, and eliminate reproducible defects before release.
+6. Every visible control must work. No fake toggles, placeholder pages, dead buttons, or features represented only by screenshots.
+
+PRODUCT PRINCIPLES
+- Bangla-first, with English and optional additional language support.
+- Offline-first for essential typing.
+- Responsive input and low latency.
+- Clear separation between keyboard service and settings application.
+- Customization must be reversible through reset options.
+- Accessible controls, scalable text, and usable contrast.
+- No unnecessary permissions.
+- No analytics or network transmission of typed text.
+- Avoid overengineering and avoid unstable third-party dependencies.
+
+DELIVERABLE
+Produce a complete Android Studio project, all source code, Gradle configuration, assets, tests, documentation, and a signed/unsigned release-ready APK build workflow. Do not deliver only a small APK or only UI files. Ensure all required runtime resources are included in the app package.
+
+Before coding, inspect the current project and environment. If an existing repository is provided, preserve useful code and identify what needs refactoring. Do not overwrite files blindly. If requirements conflict, prioritize security, platform compliance, data integrity, and reliable input behavior.
+
+PRODUCT NAME / ATTRIBUTION
+Use “Okkhor Bangla Keyboard” as the English product name and “অক্ষর বাংলা কিবোর্ড” in Bengali UI where appropriate.
+Developer credit: Chitron Bhattacharjee.
+Do not invent a company, website, email, or social media account.
+
+SUCCESS CRITERIA
+- Installs and launches on supported Android versions.
+- User can enable it in Android system keyboard settings and select it as the active keyboard.
+- Bangla and English typing work in common text fields.
+- Settings persist after process death and device restart.
+- Keyboard does not crash when switching apps, changing orientation, opening dialogs, or changing input fields.
+- Clear privacy disclosure and permissions explanation.
+- All critical workflows are tested.

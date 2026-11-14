@@ -1,0 +1,6 @@
+{
+  "name": "Okkhor Bangla Keyboard",
+  "description": "A feature-rich, privacy-focused Bangla and English keyboard with phonetic transliteration, customizable themes, and typing tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

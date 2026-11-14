@@ -1,0 +1,86 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 6 OF 10: SETTINGS APP, UX, ACCESSIBILITY, AND ONBOARDING
+
+DESIGN DIRECTION
+Create a polished, modern Android app experience. The UI should feel native, intentional, calm, and premium. Do not imitate another keyboard brand exactly. Avoid generic template design and random decorative elements.
+
+SETTINGS HOME
+The app home should clearly show:
+- Keyboard activation status.
+- Current selected keyboard status.
+- Setup steps if the keyboard is not enabled.
+- Theme preview.
+- Current input mode.
+- Quick access to customization.
+- Privacy summary.
+- Help / troubleshooting.
+- Developer credit: Chitron Bhattacharjee.
+
+ONBOARDING
+Provide a short, transparent setup flow:
+1. Explain what Okkhor Keyboard is.
+2. Explain how to enable it in Android Settings.
+3. Explain how to select it as the current keyboard.
+4. Ask for optional preferences (Bangla mode, theme, number row).
+5. Explain permissions only when needed.
+6. Provide a test typing area.
+7. Allow users to skip and return later.
+
+Do not use deceptive “Enable now” overlays or fake system settings. Launch the correct Android settings intent and explain what the user must do.
+
+NAVIGATION
+Organize settings into clear sections:
+- Appearance.
+- Languages and layouts.
+- Typing and suggestions.
+- Key behavior.
+- Gestures.
+- Clipboard.
+- Shortcuts.
+- Accessibility.
+- Privacy.
+- Advanced.
+- Backup / restore.
+- About and diagnostics.
+
+ACCESSIBILITY
+- TalkBack-friendly labels and descriptions.
+- Correct focus order.
+- Large touch targets where feasible.
+- Scalable text.
+- High contrast.
+- Color should not be the only way to communicate state.
+- Support system font scaling in the settings app.
+- Provide reduced animation.
+- Haptic feedback should be optional.
+- Key labels must remain readable at different keyboard heights.
+- Do not make essential controls gesture-only.
+
+ERROR AND EMPTY STATES
+Every screen must have:
+- Loading state if loading is necessary.
+- Empty state with helpful next action.
+- Error state with actionable recovery.
+- Permission-denied state.
+- Invalid import state.
+- Safe fallback if storage or resources fail.
+
+UX COPY
+Use concise, natural English and Bengali strings. Avoid awkward machine translations. Support Bengali localization with consistent terminology. Do not mix languages randomly in the UI. Let the user select UI language where practical.
+
+ABOUT SCREEN
+Include:
+- Okkhor Bangla Keyboard.
+- Version number.
+- Developer: Chitron Bhattacharjee.
+- Open-source notices / third-party licenses.
+- Privacy policy text or local privacy summary.
+- Feedback mechanism only if a valid destination is configured; never invent contact details.
+
+QUALITY
+- No blank screens.
+- No clipped Bengali text.
+- No inaccessible contrast.
+- No settings that appear enabled but do not affect behavior.
+- Back navigation must work.
+- State should survive app restarts.

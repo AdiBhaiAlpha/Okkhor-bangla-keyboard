@@ -1,0 +1,77 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 4 OF 10: ADVANCED CUSTOMIZATION AND THEME STUDIO
+
+CUSTOMIZATION IS A MAJOR DIFFERENTIATOR
+Users should be able to customize the keyboard deeply, while the default experience remains polished and easy to use. Provide basic settings for everyone and an Advanced / Expert section for power users.
+
+THEME BUILDER
+Allow users to configure:
+- Keyboard background color.
+- Key background color.
+- Key text color.
+- Special key colors.
+- Pressed / focused / disabled states.
+- Candidate strip background and text.
+- Border color and thickness.
+- Key corner radius.
+- Key shadow / elevation, with an option to disable.
+- Transparency where visually safe.
+- Wallpaper or background image, if implemented.
+- Gradient backgrounds only if the user explicitly chooses them.
+- Dark, light, system, and custom theme modes.
+- High contrast theme.
+- Theme preview before applying.
+
+Avoid forcing gradients, textures, excessive shadows, or flashy decoration. Default design should use a restrained, solid-color palette and excellent contrast.
+
+KEYBOARD DIMENSIONS
+Allow:
+- Keyboard height.
+- Keyboard width where supported.
+- Key height.
+- Horizontal and vertical spacing.
+- Bottom safe-area / navigation-bar behavior.
+- Key label size.
+- Secondary label size.
+- Candidate bar height.
+- Compact mode.
+- One-handed mode.
+- Floating keyboard mode.
+- Left/right handed alignment.
+
+GESTURES AND KEY BEHAVIOR
+Let users configure:
+- Swipe on spacebar to move cursor.
+- Swipe up/down/left/right on selected keys.
+- Long-press duration.
+- Long-press alternate characters.
+- Key repeat for backspace.
+- Vibration on keypress.
+- Sound on keypress.
+- Sound volume if system behavior allows.
+- Haptic intensity where Android supports it.
+- Disable all sound and haptics.
+- Key pop-up preview.
+- Keypress animation.
+- Animation intensity or off.
+
+CUSTOMIZATION UX
+- Every setting should include a short explanation.
+- Show live preview.
+- Apply changes without restarting the entire app where possible.
+- Include Reset current setting, Reset theme, and Reset all settings.
+- Confirm destructive resets.
+- Export and import theme files.
+- Validate imported files and reject malformed data safely.
+- Avoid allowing theme choices that make labels unreadable; warn and offer automatic contrast correction.
+- Include presets such as Classic Bangla, Minimal Light, Dark, High Contrast, and a neutral premium theme.
+
+THEME FILE FORMAT
+Use a versioned, documented format such as JSON. Validate all fields, types, bounds, and schema version. Never deserialize untrusted data unsafely. Include an import preview and rollback on failure.
+
+PERFORMANCE
+- Theme updates should not cause typing lag.
+- Cache expensive assets.
+- Avoid excessive allocations during key rendering.
+- Ensure memory usage remains bounded.
+- Test large custom fonts and background images if supported.

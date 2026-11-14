@@ -1,0 +1,82 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 7 OF 10: PRIVACY, SECURITY, AND DATA PROTECTION
+
+KEYBOARD PRIVACY IS CRITICAL
+A keyboard can observe sensitive user input. Treat privacy and security as first-class engineering requirements. Be honest and precise; do not make unsupported claims.
+
+DEFAULT PRIVACY
+- Essential typing must work offline.
+- Do not transmit typed text to a server.
+- Do not log typed text.
+- Do not send keystrokes, clipboard contents, passwords, or personal messages to analytics.
+- Avoid analytics SDKs entirely unless there is a compelling, disclosed, opt-in reason.
+- No advertising SDKs.
+- No hidden network behavior.
+- Do not request contacts, location, microphone, or internet permission without a real feature need.
+- If a feature requires internet, make it optional and explain why.
+
+PASSWORD / SENSITIVE FIELDS
+- Detect password and sensitive editor types using EditorInfo/inputType flags.
+- Disable suggestions, autocorrect, learning, clipboard history, and key previews in sensitive fields as appropriate.
+- Never retain typed password content.
+- Do not persist text from sensitive fields.
+- Avoid exposing sensitive text through logs, crash reports, notifications, or debugging output.
+- Respect app-provided privacy flags where applicable.
+
+DATA STORAGE
+- Store settings locally.
+- Protect sensitive user data.
+- Use Android security best practices.
+- Do not store typed content unless the user explicitly enables a feature that requires it.
+- Clipboard history must be opt-in and have expiry.
+- Provide clear delete controls.
+- Provide export/import without silently sharing data.
+- Validate imported content and avoid path traversal or arbitrary file access.
+
+NETWORK
+If networking is present:
+- Use HTTPS.
+- Do not send keyboard input.
+- Avoid remote configuration that can change behavior invisibly.
+- Do not load arbitrary remote scripts.
+- Document all network endpoints and data fields.
+- Use certificate validation correctly.
+- Do not hardcode API keys or secrets.
+- Do not include a secret that grants unrestricted access in the APK.
+- Use rate limiting and appropriate backend protections if any backend exists.
+
+PERMISSIONS
+Request the minimum permissions needed.
+For each permission:
+- Explain the feature that requires it.
+- Request only at the time the feature is used.
+- Provide a graceful no-permission path.
+- Never claim a permission is required if the app can function without it.
+
+PRIVACY DISCLOSURE
+Write a readable privacy summary and detailed policy. Clearly distinguish:
+- Data processed locally.
+- Data optionally stored locally.
+- Data sent off-device, if any.
+- Data retention.
+- User deletion controls.
+- Clipboard behavior.
+- Voice input provider behavior.
+- Crash diagnostics, if any.
+Do not state “we collect nothing” if any third-party service collects data.
+
+SECURITY REVIEW
+Review:
+- Exported components.
+- Intent filters.
+- FileProvider configuration.
+- Deep links.
+- Backup settings.
+- Local database.
+- Imported theme and dictionary files.
+- Logs.
+- Clipboard.
+- Network access.
+- Dependency vulnerabilities.
+
+Provide a threat model and security checklist. The keyboard must never use accessibility services to capture other apps’ text or bypass Android restrictions.

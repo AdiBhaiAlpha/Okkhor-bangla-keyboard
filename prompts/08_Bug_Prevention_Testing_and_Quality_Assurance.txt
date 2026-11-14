@@ -1,0 +1,105 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 8 OF 10: BUG PREVENTION, TESTING, AND QUALITY ASSURANCE
+
+IMPORTANT
+No software can honestly guarantee “impossible bugs” or zero defects. The engineering goal is to prevent common failure classes, detect regressions early, recover gracefully, and ship only after critical workflows pass.
+
+BUG PREVENTION
+- Use Kotlin null safety and clear state models.
+- Avoid force unwraps and unchecked casts.
+- Validate all external and persisted input.
+- Handle exceptions at appropriate boundaries.
+- Do not silently swallow errors.
+- Avoid blocking the main thread.
+- Avoid memory leaks and stale InputConnection references.
+- Avoid race conditions between settings updates and keyboard rendering.
+- Cancel stale coroutine jobs.
+- Handle service restarts and process death.
+- Guard against repeated key events.
+- Keep composition state consistent.
+- Use bounded caches.
+- Do not depend on undocumented system behavior.
+- Add assertions and diagnostic logging that never includes typed content.
+
+TEST PLAN
+UNIT TESTS
+- Transliteration mapping.
+- Candidate ranking.
+- Unicode composition.
+- Backspace and grapheme deletion.
+- Cursor and selection handling.
+- Theme serialization/deserialization.
+- Settings validation.
+- Shortcut expansion.
+- Sensitive-field detection.
+- Layout bounds and key hit-testing.
+
+INSTRUMENTATION TESTS
+- Enable IME.
+- Select keyboard.
+- Switch language.
+- Type Bangla in EditText.
+- Type English.
+- Switch apps.
+- Rotate device.
+- Change keyboard height.
+- Toggle theme.
+- Restart app/service.
+- Test keyboard in multiline fields.
+- Test password fields.
+- Test text selection and replacement.
+- Test clipboard feature when enabled.
+- Test keyboard dismissal and re-opening.
+
+DEVICE / APP MATRIX
+Test on:
+- Minimum supported Android version.
+- A recent Android version.
+- Small and large screens.
+- Different display densities.
+- Portrait and landscape.
+- Popular editor types: browser input, messaging input, notes, search field, multiline editor.
+- OEM keyboards/settings variations where available.
+
+REGRESSION TESTS
+Every bug fix should include a reproduction case and a regression test when feasible. Maintain a bug log with:
+- ID.
+- Severity.
+- Reproduction steps.
+- Expected behavior.
+- Actual behavior.
+- Root cause.
+- Fix.
+- Regression test.
+- Verification status.
+
+CRITICAL BUGS
+Release blockers:
+- Keyboard crash or cannot be activated.
+- Text loss or corruption.
+- Wrong insertion or cursor behavior.
+- Password content leakage.
+- Severe input lag.
+- Settings reset unexpectedly.
+- Keyboard inaccessible or unusable.
+- Bengali Unicode corruption.
+- Any data sent without consent.
+- Build/install failure.
+
+PERFORMANCE
+Measure:
+- Keyboard show latency.
+- Keypress response.
+- Transliteration delay.
+- Memory usage.
+- Battery impact.
+- Startup time.
+- Frame drops.
+Set measurable targets based on actual test devices and report results. Do not invent benchmark results.
+
+CRASH HANDLING
+- Recover safely from non-fatal errors.
+- Keep keyboard usable when optional modules fail.
+- Provide a fallback layout.
+- Do not crash the entire IME due to a dictionary or theme failure.
+- Avoid sending crash reports containing user text.

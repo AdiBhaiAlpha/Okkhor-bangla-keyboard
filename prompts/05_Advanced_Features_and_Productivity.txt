@@ -1,0 +1,79 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 5 OF 10: ADVANCED FEATURES AND PRODUCTIVITY
+
+Implement features in priority order. The base keyboard must remain reliable even if optional features are disabled.
+
+SUGGESTIONS AND AUTOCORRECT
+- Bangla word suggestions.
+- English suggestions.
+- Transliteration candidates.
+- Optional next-word prediction.
+- Optional autocorrect with conservative defaults.
+- User dictionary.
+- Add / remove personal words.
+- Ignore list.
+- Learn from user corrections only if the user explicitly enables learning.
+- Provide a clear “undo correction” or restore typed text action.
+- Avoid aggressive correction of names, political terms, slang, and regional words.
+- Allow disabling suggestions, autocorrect, and personalization independently.
+
+CLIPBOARD
+If clipboard history is implemented:
+- Make it opt-in.
+- Explain that copied text can contain sensitive information.
+- Provide delete individual item, clear all, and automatic expiry.
+- Never upload clipboard content.
+- Do not store passwords or content from password fields.
+- Respect Android clipboard privacy and platform restrictions.
+- Provide a “do not save clipboard” switch.
+- Keep clipboard access transparent and user initiated.
+
+TEXT SHORTCUTS / EXPANSION
+- User-defined abbreviation → expanded phrase.
+- Example: a short trigger expands to a frequently used sentence.
+- Support Bangla and English.
+- Allow edit, delete, import, and export.
+- Prevent accidental expansion inside words.
+- Provide an explicit expansion preview or undo.
+- Do not include default politically sensitive or personal phrases.
+
+EMOJI / SYMBOLS
+- Search emoji if supported.
+- Recently used emoji.
+- Favorites.
+- Bangla punctuation and common symbols.
+- Quick access to ৳, %, @, #, parentheses, quotation marks, and common mathematical symbols.
+- Make emoji panel optional and lightweight.
+
+CURSOR CONTROL
+- Spacebar cursor movement where supported.
+- Dedicated cursor-control panel.
+- Selection movement and text editing actions.
+- Avoid interfering with app-specific editor gestures.
+
+NUMBER ROW
+- Optional always-visible number row.
+- User-controlled number row height and position.
+- Secondary symbols through long press.
+- Optional calculator-style numeric keypad.
+
+VOICE INPUT
+If voice typing is included, make it optional and clearly identify whether it relies on Android system speech recognition or another provider. Do not silently upload audio or text. Explain network and permission implications. If reliable Bangla voice input cannot be implemented safely, provide integration with system voice input rather than pretending to have an independent speech engine.
+
+EXTRA PRODUCTIVITY
+Potential advanced tools:
+- Quick punctuation.
+- Date/time insertion.
+- Custom snippets.
+- One-handed mode.
+- Floating mode.
+- Keyboard toolbar.
+- Clipboard pinning.
+- Quick settings for theme and language.
+- App-specific preferences, only with user control and privacy clarity.
+
+FEATURE FLAGS
+- Optional features should be individually toggleable.
+- Disabled features must not run background work.
+- Do not ship fake features with “Coming soon” unless clearly marked and agreed.
+- Document which features are implemented, partial, or deferred.

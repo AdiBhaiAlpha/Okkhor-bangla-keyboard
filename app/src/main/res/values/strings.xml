@@ -1,0 +1,104 @@
+<resources>
+    <string name="app_name">Okkhor Bangla Keyboard</string>
+    <string name="ime_name">Okkhor Bangla Keyboard</string>
+    <string name="app_name_bengali">অক্ষর বাংলা কিবোর্ড</string>
+    <string name="developer_name">Chitron Bhattacharjee</string>
+    <string name="app_version">1.0.1</string>
+
+    <!-- Subtypes -->
+    <string name="subtype_bangla_phonetic">Bangla (Phonetic)</string>
+    <string name="subtype_bangla_fixed">Bangla (Fixed)</string>
+    <string name="subtype_english">English (US)</string>
+
+    <!-- Navigation Tabs -->
+    <string name="nav_home">Home</string>
+    <string name="nav_themes">Themes</string>
+    <string name="nav_input">Input</string>
+    <string name="nav_typing">Typing</string>
+    <string name="nav_more">More</string>
+
+    <!-- Setup / Onboarding -->
+    <string name="setup_title">Get Started with Okkhor</string>
+    <string name="setup_subtitle">Fast, expressive, and privacy-first Bangla typing</string>
+    <string name="step_1_title">1. Enable Keyboard</string>
+    <string name="step_1_desc">Enable Okkhor Bangla Keyboard in Android System Settings</string>
+    <string name="step_1_button">Enable in Settings</string>
+    <string name="step_2_title">2. Select Input Method</string>
+    <string name="step_2_desc">Choose Okkhor Keyboard as your active default keyboard</string>
+    <string name="step_2_button">Switch Keyboard</string>
+    <string name="step_done">Keyboard is Ready!</string>
+    <string name="step_enabled">Enabled</string>
+    <string name="step_active">Active Default</string>
+    <string name="test_typing_title">Test Typing Sandbox</string>
+    <string name="test_typing_hint">Tap here to test typing in Bangla or English...</string>
+
+    <!-- Themes -->
+    <string name="theme_studio_title">Theme Studio</string>
+    <string name="theme_presets">Theme Presets</string>
+    <string name="theme_classic_bangla">Classic Teal &amp; Gold</string>
+    <string name="theme_midnight_dark">Midnight AMOLED</string>
+    <string name="theme_minimal_light">Paper White</string>
+    <string name="theme_sunset_orange">Sunset Amber</string>
+    <string name="theme_high_contrast">High Contrast OLED</string>
+    <string name="theme_emerald">Okkhor Emerald</string>
+    <string name="theme_custom">Custom Theme</string>
+
+    <!-- Layout & Input Options -->
+    <string name="input_settings_title">Input &amp; Layouts</string>
+    <string name="pref_default_mode">Default Input Mode</string>
+    <string name="mode_phonetic">Bangla Phonetic (Avro Style)</string>
+    <string name="mode_fixed">Bangla Fixed (National / Probhat)</string>
+    <string name="mode_english">English QWERTY</string>
+    <string name="pref_show_number_row">Always Show Number Row</string>
+    <string name="pref_show_number_row_desc">Display dedicated number row on top of keyboard</string>
+    <string name="pref_show_suggestions">Word Suggestions &amp; Candidates</string>
+    <string name="pref_show_suggestions_desc">Display transliteration candidates and next-word predictions</string>
+    <string name="pref_autocorrect">Conservative Autocorrect</string>
+    <string name="pref_autocorrect_desc">Fix minor typos automatically without replacing names or regional words</string>
+    <string name="pref_vibration">Haptic Feedback on Keypress</string>
+    <string name="pref_vibration_desc">Gentle vibration when tapping keys</string>
+    <string name="pref_sound">Sound on Keypress</string>
+    <string name="pref_sound_desc">Play subtle system audio click on key tap</string>
+    <string name="pref_key_popup">Key Popup Preview</string>
+    <string name="pref_key_popup_desc">Show enlarged character balloon on keypress</string>
+    <string name="pref_space_swipe">Spacebar Cursor Movement</string>
+    <string name="pref_space_swipe_desc">Swipe left or right across the spacebar to slide cursor</string>
+
+    <!-- Dimensions & Appearance -->
+    <string name="pref_keyboard_height">Keyboard Height</string>
+    <string name="pref_key_corner_radius">Key Corner Rounding</string>
+    <string name="pref_key_elevation">Key Elevation &amp; Shadows</string>
+
+    <!-- Clipboard & Shortcuts -->
+    <string name="clipboard_title">Clipboard Manager</string>
+    <string name="clipboard_opt_in">Opt-in Clipboard History</string>
+    <string name="clipboard_opt_in_desc">Keep recent copied snippets locally on device for quick insertion</string>
+    <string name="clipboard_privacy_notice">Passwords and sensitive fields are never saved. Copied data stays purely on your device.</string>
+    <string name="clipboard_clear_all">Clear Clipboard History</string>
+    <string name="clipboard_empty">No clipboard history yet</string>
+
+    <!-- Text Shortcuts -->
+    <string name="shortcuts_title">Text Expansion Shortcuts</string>
+    <string name="shortcuts_desc">Type short abbreviations to quickly expand frequent phrases</string>
+    <string name="add_shortcut">Add Shortcut</string>
+    <string name="shortcut_trigger">Shortcut (e.g. omw)</string>
+    <string name="shortcut_expansion">Expanded Text (e.g. On my way!)</string>
+
+    <!-- Privacy -->
+    <string name="privacy_title">Privacy &amp; Security</string>
+    <string name="privacy_badge_offline">Privacy-First Architecture</string>
+    <string name="privacy_summary">Okkhor Bangla Keyboard stores your typing memory, shortcuts, and clipboard history strictly on your device with no Internet permission and zero advertising or analytics SDKs. Optional Microphone permission is used solely when you tap the Voice Typing mic button via Android\'s system speech recognizer.</string>
+    <string name="privacy_password_policy">Sensitive Fields Protection: When typing in password fields or credit card inputs, autocorrect, suggestions, learning, key previews, and clipboard history are automatically disabled.</string>
+
+    <!-- About -->
+    <string name="about_title">About Okkhor</string>
+    <string name="about_developed_by">Crafted by %1$s</string>
+    <string name="about_description">Okkhor Bangla Keyboard (অক্ষর বাংলা কিবোর্ড) is a high-performance, deeply customizable Android IME built with respect for Bengali typography and user privacy.</string>
+    <string name="about_reset_all">Reset All Settings to Defaults</string>
+    <string name="about_reset_confirm">Are you sure you want to reset all themes, preferences, and custom layouts to default?</string>
+    <string name="confirm">Confirm</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="reset">Reset</string>
+</resources>

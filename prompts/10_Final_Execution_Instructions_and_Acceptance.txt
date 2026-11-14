@@ -1,0 +1,101 @@
+OKKHOR BANGLA KEYBOARD — MASTER DEVELOPMENT PROMPT
+PART 10 OF 10: FINAL EXECUTION INSTRUCTIONS, ACCEPTANCE, AND HANDOFF
+
+EXECUTION STRATEGY
+Do not attempt to generate the entire product as one unverified burst of code. Work in phases, keeping the project buildable after each phase.
+
+PHASE 1 — AUDIT AND PLAN
+- Inspect repository, system, Android SDK, Gradle, and existing files.
+- Report the current state.
+- Create a feature matrix: required, optional, deferred.
+- Identify technical risks and dependencies.
+- Create a milestone plan.
+- Ask only for truly blocking decisions; otherwise use reasonable defaults and document them.
+
+PHASE 2 — FOUNDATION
+- Create project structure.
+- Configure Gradle.
+- Add manifest and IME service.
+- Implement onboarding and activation flow.
+- Build and install a minimal functioning keyboard.
+- Verify basic Bangla and English input before proceeding.
+
+PHASE 3 — CORE INPUT
+- Implement layouts.
+- Implement Bangla phonetic engine.
+- Implement Unicode-safe editing.
+- Add candidate strip.
+- Add language switch.
+- Add tests and fix regressions.
+
+PHASE 4 — SETTINGS AND CUSTOMIZATION
+- Add settings persistence.
+- Add theme studio.
+- Add key size and spacing controls.
+- Add layout options.
+- Add gestures and haptics.
+- Confirm every setting works.
+
+PHASE 5 — ADVANCED FEATURES
+- Suggestions and user dictionary.
+- Shortcuts.
+- Clipboard history only if privacy requirements are met.
+- Cursor control.
+- Optional productivity tools.
+- Feature flags and graceful fallback.
+
+PHASE 6 — HARDENING
+- Security review.
+- Accessibility review.
+- Performance tests.
+- Device matrix testing.
+- Regression testing.
+- Fix all release-blocking defects.
+
+PHASE 7 — RELEASE
+- Clean build.
+- Run tests.
+- Produce APK/AAB.
+- Verify install and activation.
+- Generate documentation.
+- Deliver project and artifacts.
+
+CODING AGENT BEHAVIOR
+- Be autonomous and make progress without repeatedly asking for confirmation on routine decisions.
+- Do not claim files exist unless they were actually created.
+- Do not claim tests passed unless they were executed.
+- Do not leave TODO placeholders for core functionality.
+- Do not replace real features with static mockups.
+- Do not remove working functionality without justification.
+- If a feature is too risky or not feasible, explain the limitation and implement a safe alternative.
+- Keep a changelog of major implementation decisions.
+- After each phase, summarize changed files, build status, tests, and remaining issues.
+- When errors occur, inspect full logs, identify root cause, and fix the underlying issue rather than masking it.
+- Avoid broad destructive commands.
+- Do not expose credentials or secrets.
+
+ACCEPTANCE CRITERIA
+The project is accepted only when:
+1. It builds from source.
+2. It installs on the declared Android versions.
+3. Android recognizes it as an IME.
+4. The user can enable and select it.
+5. Bangla typing works.
+6. English typing works.
+7. Switching input modes works.
+8. Unicode editing is reliable in tested scenarios.
+9. Settings persist.
+10. Theme customization works and persists.
+11. No critical crash remains in tested flows.
+12. Sensitive input is handled safely.
+13. Privacy disclosures match actual behavior.
+14. All essential buttons and settings are functional.
+15. Documentation and test results are included.
+16. Developer attribution is correct.
+
+FINAL PRODUCT SUMMARY
+Product: Okkhor Bangla Keyboard (অক্ষর বাংলা কিবোর্ড)
+Developer: Chitron Bhattacharjee
+Primary goal: A Bangla-specialized Android keyboard with powerful customization, advanced typing features, strong privacy, and carefully tested reliability.
+
+Start by auditing the environment and creating a realistic implementation plan. Then proceed to build the application in small, verified milestones. Prioritize a working, reliable Bangla IME over an impressive but nonfunctional UI.
