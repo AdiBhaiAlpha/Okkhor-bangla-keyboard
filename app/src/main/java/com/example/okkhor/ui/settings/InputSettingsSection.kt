@@ -399,6 +399,84 @@ fun InputSettingsSection(
             }
         }
 
+        // Hold, Drag & Release Text Editing Gestures Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Hold, Drag & Release Text Editing Gestures",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                Text(
+                    text = "Perform advanced text editing shortcuts (Copy, Paste, Cut, Select, Word delete, Line navigation) by holding letter keys (C, V, X, A, Z, R, S, D, B, F, H, L, P) for 1.5 seconds.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                SettingToggleItem(
+                    title = "Enable Shortcut Gestures",
+                    description = "Long-press letter keys to trigger text editing actions",
+                    checked = settings.shortcutGesturesEnabled,
+                    tag = "switch_shortcut_gestures",
+                    onCheckedChange = { checked ->
+                        onUpdateSettings { it.copy(shortcutGesturesEnabled = checked) }
+                    }
+                )
+
+                if (settings.shortcutGesturesEnabled) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+
+                    SettingToggleItem(
+                        title = "Copy (C) & Paste (V) Shortcuts",
+                        description = "Hold C for Copy, V for Paste",
+                        checked = settings.shortcutCopyEnabled && settings.shortcutPasteEnabled,
+                        tag = "switch_shortcut_copy_paste",
+                        onCheckedChange = { checked ->
+                            onUpdateSettings { it.copy(shortcutCopyEnabled = checked, shortcutPasteEnabled = checked) }
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    SettingToggleItem(
+                        title = "Select Word (S) & Delete Word (D)",
+                        description = "Hold S to select word at cursor, D to delete word",
+                        checked = settings.shortcutSelectWordEnabled && settings.shortcutDeleteWordEnabled,
+                        tag = "switch_shortcut_word_actions",
+                        onCheckedChange = { checked ->
+                            onUpdateSettings { it.copy(shortcutSelectWordEnabled = checked, shortcutDeleteWordEnabled = checked) }
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    SettingToggleItem(
+                        title = "Line Start (H) & Line End (L) Shortcuts",
+                        description = "Hold H to jump to start of line, L to jump to end of line",
+                        checked = settings.shortcutLineStartEnabled && settings.shortcutLineEndEnabled,
+                        tag = "switch_shortcut_line_actions",
+                        onCheckedChange = { checked ->
+                            onUpdateSettings { it.copy(shortcutLineStartEnabled = checked, shortcutLineEndEnabled = checked) }
+                        }
+                    )
+                }
+            }
+        }
+
         // One-Handed Mode Card
         Card(
             modifier = Modifier.fillMaxWidth(),

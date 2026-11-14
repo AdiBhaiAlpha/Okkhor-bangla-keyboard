@@ -59,7 +59,23 @@ data class KeyboardSettings(
     val floatingOffsetX: Float = 0f,
     val floatingOffsetY: Float = 0f,
     val customTranslationUrl: String = "",
-    val customThemeJson: String = ""
+    val customThemeJson: String = "",
+    val shortcutGesturesEnabled: Boolean = true,
+    val shortcutCopyEnabled: Boolean = true,
+    val shortcutPasteEnabled: Boolean = true,
+    val shortcutCutEnabled: Boolean = true,
+    val shortcutSelectAllEnabled: Boolean = true,
+    val shortcutUndoEnabled: Boolean = true,
+    val shortcutRedoEnabled: Boolean = true,
+    val shortcutSelectWordEnabled: Boolean = true,
+    val shortcutDeleteWordEnabled: Boolean = true,
+    val shortcutPrevWordEnabled: Boolean = true,
+    val shortcutNextWordEnabled: Boolean = true,
+    val shortcutLineStartEnabled: Boolean = true,
+    val shortcutLineEndEnabled: Boolean = true,
+    val shortcutClipboardDockEnabled: Boolean = true,
+    val shortcutLongPressDurationMs: Long = 1500L,
+    val shortcutHapticEnabled: Boolean = true
 )
 
 data class ShortcutItem(

@@ -614,7 +614,54 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                 ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN, 0, meta))
                 ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_DOWN, 0, meta))
             }
+
+            "SELECT_WORD" -> selectWordAtCursor()
+
+            "DELETE_WORD" -> deleteWordBeforeCursor()
+
+            "PREV_WORD" -> {
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, 0, KeyEvent.META_CTRL_ON))
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_LEFT, 0, KeyEvent.META_CTRL_ON))
+            }
+
+            "NEXT_WORD" -> {
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT, 0, KeyEvent.META_CTRL_ON))
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT, 0, KeyEvent.META_CTRL_ON))
+            }
+
+            "LINE_START" -> {
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MOVE_HOME, 0, 0))
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MOVE_HOME, 0, 0))
+            }
+
+            "LINE_END" -> {
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MOVE_END, 0, 0))
+                ic.sendKeyEvent(KeyEvent(0L, 0L, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MOVE_END, 0, 0))
+            }
         }
+    }
+
+    private fun selectWordAtCursor() {
+        val ic = activeInputConnection() ?: return
+        val extracted = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
+        val before = ic.getTextBeforeCursor(64, 0)?.toString().orEmpty()
+        val after = ic.getTextAfterCursor(64, 0)?.toString().orEmpty()
+        val combined = before + after
+        if (combined.isEmpty()) return
+        val cursorLocal = before.length
+        var start = cursorLocal.coerceIn(0, combined.length)
+        var end = start
+        while (start > 0 && isWordChar(combined[start - 1])) start--
+        while (end < combined.length && isWordChar(combined[end])) end++
+        if (start < end) {
+            val base = (extracted?.selectionStart ?: cursorLocal) - before.length
+            ic.setSelection(base + start, base + end)
+            refreshSelectionState(ic)
+        }
+    }
+
+    private fun isWordChar(c: Char): Boolean {
+        return c.isLetterOrDigit() || c in 'ক'..'হ' || c in 'া'..'ৌ' || c == 'ৎ' || c == 'ং' || c == 'ঃ' || c == 'ঁ' || c == '়' || c.toString() == "র্" || c == '্'
     }
 
     private fun writeToSystemClipboard(text: String) {

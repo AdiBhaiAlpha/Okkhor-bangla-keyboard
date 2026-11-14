@@ -136,7 +136,23 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
             floatingOffsetX = prefs.getFloat(KEY_FLOATING_OFFSET_X, 0f).coerceIn(-120f, 120f),
             floatingOffsetY = prefs.getFloat(KEY_FLOATING_OFFSET_Y, 0f).coerceIn(-160f, 0f),
             customTranslationUrl = prefs.getString(KEY_CUSTOM_TRANSLATION_URL, "") ?: "",
-            customThemeJson = prefs.getString(KEY_CUSTOM_THEME_JSON, "") ?: ""
+            customThemeJson = prefs.getString(KEY_CUSTOM_THEME_JSON, "") ?: "",
+            shortcutGesturesEnabled = prefs.getBoolean(KEY_SHORTCUT_GESTURES_ENABLED, true),
+            shortcutCopyEnabled = prefs.getBoolean(KEY_SHORTCUT_COPY_ENABLED, true),
+            shortcutPasteEnabled = prefs.getBoolean(KEY_SHORTCUT_PASTE_ENABLED, true),
+            shortcutCutEnabled = prefs.getBoolean(KEY_SHORTCUT_CUT_ENABLED, true),
+            shortcutSelectAllEnabled = prefs.getBoolean(KEY_SHORTCUT_SELECT_ALL_ENABLED, true),
+            shortcutUndoEnabled = prefs.getBoolean(KEY_SHORTCUT_UNDO_ENABLED, true),
+            shortcutRedoEnabled = prefs.getBoolean(KEY_SHORTCUT_REDO_ENABLED, true),
+            shortcutSelectWordEnabled = prefs.getBoolean(KEY_SHORTCUT_SELECT_WORD_ENABLED, true),
+            shortcutDeleteWordEnabled = prefs.getBoolean(KEY_SHORTCUT_DELETE_WORD_ENABLED, true),
+            shortcutPrevWordEnabled = prefs.getBoolean(KEY_SHORTCUT_PREV_WORD_ENABLED, true),
+            shortcutNextWordEnabled = prefs.getBoolean(KEY_SHORTCUT_NEXT_WORD_ENABLED, true),
+            shortcutLineStartEnabled = prefs.getBoolean(KEY_SHORTCUT_LINE_START_ENABLED, true),
+            shortcutLineEndEnabled = prefs.getBoolean(KEY_SHORTCUT_LINE_END_ENABLED, true),
+            shortcutClipboardDockEnabled = prefs.getBoolean(KEY_SHORTCUT_CLIPBOARD_DOCK_ENABLED, true),
+            shortcutLongPressDurationMs = prefs.getLong(KEY_SHORTCUT_LONG_PRESS_DURATION_MS, 1500L).coerceIn(1000L, 3000L),
+            shortcutHapticEnabled = prefs.getBoolean(KEY_SHORTCUT_HAPTIC_ENABLED, true)
         )
     }
 
@@ -191,6 +207,22 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
             putFloat(KEY_FLOATING_OFFSET_Y, updated.floatingOffsetY)
             putString(KEY_CUSTOM_TRANSLATION_URL, updated.customTranslationUrl)
             putString(KEY_CUSTOM_THEME_JSON, updated.customThemeJson)
+            putBoolean(KEY_SHORTCUT_GESTURES_ENABLED, updated.shortcutGesturesEnabled)
+            putBoolean(KEY_SHORTCUT_COPY_ENABLED, updated.shortcutCopyEnabled)
+            putBoolean(KEY_SHORTCUT_PASTE_ENABLED, updated.shortcutPasteEnabled)
+            putBoolean(KEY_SHORTCUT_CUT_ENABLED, updated.shortcutCutEnabled)
+            putBoolean(KEY_SHORTCUT_SELECT_ALL_ENABLED, updated.shortcutSelectAllEnabled)
+            putBoolean(KEY_SHORTCUT_UNDO_ENABLED, updated.shortcutUndoEnabled)
+            putBoolean(KEY_SHORTCUT_REDO_ENABLED, updated.shortcutRedoEnabled)
+            putBoolean(KEY_SHORTCUT_SELECT_WORD_ENABLED, updated.shortcutSelectWordEnabled)
+            putBoolean(KEY_SHORTCUT_DELETE_WORD_ENABLED, updated.shortcutDeleteWordEnabled)
+            putBoolean(KEY_SHORTCUT_PREV_WORD_ENABLED, updated.shortcutPrevWordEnabled)
+            putBoolean(KEY_SHORTCUT_NEXT_WORD_ENABLED, updated.shortcutNextWordEnabled)
+            putBoolean(KEY_SHORTCUT_LINE_START_ENABLED, updated.shortcutLineStartEnabled)
+            putBoolean(KEY_SHORTCUT_LINE_END_ENABLED, updated.shortcutLineEndEnabled)
+            putBoolean(KEY_SHORTCUT_CLIPBOARD_DOCK_ENABLED, updated.shortcutClipboardDockEnabled)
+            putLong(KEY_SHORTCUT_LONG_PRESS_DURATION_MS, updated.shortcutLongPressDurationMs)
+            putBoolean(KEY_SHORTCUT_HAPTIC_ENABLED, updated.shortcutHapticEnabled)
             apply()
         }
         if (updated.clipboardRetentionHours != previous.clipboardRetentionHours) {
@@ -615,6 +647,22 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
         private const val KEY_FLOATING_OFFSET_Y = "pref_floating_offset_y"
         private const val KEY_CUSTOM_TRANSLATION_URL = "pref_custom_translation_url"
         private const val KEY_CUSTOM_THEME_JSON = "pref_custom_theme_json"
+        private const val KEY_SHORTCUT_GESTURES_ENABLED = "pref_shortcut_gestures_enabled"
+        private const val KEY_SHORTCUT_COPY_ENABLED = "pref_shortcut_copy_enabled"
+        private const val KEY_SHORTCUT_PASTE_ENABLED = "pref_shortcut_paste_enabled"
+        private const val KEY_SHORTCUT_CUT_ENABLED = "pref_shortcut_cut_enabled"
+        private const val KEY_SHORTCUT_SELECT_ALL_ENABLED = "pref_shortcut_select_all_enabled"
+        private const val KEY_SHORTCUT_UNDO_ENABLED = "pref_shortcut_undo_enabled"
+        private const val KEY_SHORTCUT_REDO_ENABLED = "pref_shortcut_redo_enabled"
+        private const val KEY_SHORTCUT_SELECT_WORD_ENABLED = "pref_shortcut_select_word_enabled"
+        private const val KEY_SHORTCUT_DELETE_WORD_ENABLED = "pref_shortcut_delete_word_enabled"
+        private const val KEY_SHORTCUT_PREV_WORD_ENABLED = "pref_shortcut_prev_word_enabled"
+        private const val KEY_SHORTCUT_NEXT_WORD_ENABLED = "pref_shortcut_next_word_enabled"
+        private const val KEY_SHORTCUT_LINE_START_ENABLED = "pref_shortcut_line_start_enabled"
+        private const val KEY_SHORTCUT_LINE_END_ENABLED = "pref_shortcut_line_end_enabled"
+        private const val KEY_SHORTCUT_CLIPBOARD_DOCK_ENABLED = "pref_shortcut_clipboard_dock_enabled"
+        private const val KEY_SHORTCUT_LONG_PRESS_DURATION_MS = "pref_shortcut_long_press_duration_ms"
+        private const val KEY_SHORTCUT_HAPTIC_ENABLED = "pref_shortcut_haptic_enabled"
         private const val KEY_SHORTCUTS = "pref_shortcuts_json"
         private const val KEY_CLIPBOARD = "pref_clipboard_json"
         private const val KEY_RECENT_EMOJIS = "pref_recent_emojis"
