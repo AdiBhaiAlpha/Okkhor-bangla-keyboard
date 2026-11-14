@@ -1,21 +1,71 @@
 package com.example
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.test.core.app.ApplicationProvider
+import com.example.okkhor.data.model.ClipboardItem
+import com.example.okkhor.data.model.InputMode
+import com.example.okkhor.data.model.KeyboardSettings
+import com.example.okkhor.data.model.KeyboardTheme
 import com.example.okkhor.data.preferences.KeyboardPreferencesRepository
+import com.example.okkhor.emoji.EmojiCategory
+import com.example.okkhor.emoji.EmojiKitchenEngine
+import com.example.okkhor.emoji.EmojiMashupStyle
+import com.example.okkhor.emoji.GifSearchUiState
+import com.example.okkhor.emoji.GiphyRepository
+import com.example.okkhor.emoji.UnicodeEmojiRepository
+import com.example.okkhor.engine.BanglaUnicodeHelper
+import com.example.okkhor.ime.OkkhorInputMethodService
+import com.example.okkhor.ui.keyboard.KeyboardContainer
+import com.example.okkhor.ui.keyboard.KeyboardLayouts
+import com.example.okkhor.ui.settings.InputSettingsSection
+import com.example.okkhor.ui.settings.PrivacyAboutSection
+import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.net.InetSocketAddress
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class ExampleRobolectricTest {
+
+    @get:Rule
+    val composeTestRule = createComposeRule()
 
     @Test
     fun `read string from context`() {
@@ -186,7 +236,1052 @@ class ExampleRobolectricTest {
         )
         controller.destroy()
     }
+
+    @Test
+    fun `verify OkkhorInputMethodService creates transparent IME window and view hierarchy`() {
+        val serviceController = org.robolectric.Robolectric.buildService(com.example.okkhor.ime.OkkhorInputMethodService::class.java)
+        val service = serviceController.create().get()
+        val inputView = service.onCreateInputView()
+        val inputBg = inputView.background
+        val isTransparentInputBg = inputBg == null ||
+            (inputBg is android.graphics.drawable.ColorDrawable && inputBg.color == android.graphics.Color.TRANSPARENT)
+        org.junit.Assert.assertTrue("ComposeView root background must be transparent", isTransparentInputBg)
+
+        service.window?.window?.let { win ->
+            val decorBg = win.decorView.background
+            val isTransparentDecor = decorBg == null ||
+                (decorBg is android.graphics.drawable.ColorDrawable && decorBg.color == android.graphics.Color.TRANSPARENT)
+            org.junit.Assert.assertTrue("IME decorView background must be transparent", isTransparentDecor)
+        }
+        serviceController.destroy()
+    }
+
+    @Test
+    fun `verify KeyboardPreferencesRepository persists and clamps height and width dimensions`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = KeyboardPreferencesRepository.getInstance(context)
+        repo.resetAllSettings()
+
+        assertEquals(100, repo.settings.value.keyboardHeightPercent)
+        assertEquals(100, repo.settings.value.keyboardWidthPercent)
+
+        repo.updateSettings { it.copy(keyboardHeightPercent = 122, keyboardWidthPercent = 86) }
+        assertEquals(122, repo.settings.value.keyboardHeightPercent)
+        assertEquals(86, repo.settings.value.keyboardWidthPercent)
+
+        val prefs = context.getSharedPreferences("okkhor_keyboard_prefs", Context.MODE_PRIVATE)
+        assertEquals(122, prefs.getInt("pref_height_percent", -1))
+        assertEquals(86, prefs.getInt("pref_width_percent", -1))
+
+        // Clamp upper and lower bounds
+        repo.updateSettings { it.copy(keyboardHeightPercent = 200, keyboardWidthPercent = 40) }
+        assertEquals(140, repo.settings.value.keyboardHeightPercent)
+        assertEquals(75, repo.settings.value.keyboardWidthPercent)
+        assertEquals(140, prefs.getInt("pref_height_percent", -1))
+        assertEquals(75, prefs.getInt("pref_width_percent", -1))
+
+        repo.updateSettings { it.copy(keyboardHeightPercent = 30, keyboardWidthPercent = 130) }
+        assertEquals(75, repo.settings.value.keyboardHeightPercent)
+        assertEquals(100, repo.settings.value.keyboardWidthPercent)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify Direct Keyboard Resizing Mode drags height and width, resets, and exits cleanly`() {
+        var currentSettings by mutableStateOf(KeyboardSettings())
+        var lastSavedHeight = 100
+        var lastSavedWidth = 100
+
+        composeTestRule.setContent {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                KeyboardContainer(
+                    settings = currentSettings,
+                    theme = KeyboardTheme.OkkhorEmerald,
+                    currentMode = InputMode.ENGLISH,
+                    isShifted = false,
+                    candidates = emptyList(),
+                    onKeyPress = {},
+                    onActionKey = {},
+                    onCandidateClick = {},
+                    onModeSwitch = {},
+                    onCursorMove = {},
+                    onOpenSettings = {},
+                    onOpenClipboard = {},
+                    onUpdateDimensions = { height, width ->
+                        lastSavedHeight = height
+                        lastSavedWidth = width
+                        currentSettings = currentSettings.copy(
+                            keyboardHeightPercent = height,
+                            keyboardWidthPercent = width
+                        )
+                    }
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        // Resize overlay must not exist while inactive
+        composeTestRule.onNodeWithTag("resize_mode_overlay").assertDoesNotExist()
+
+        // Activate interactive resize mode from toolbar icon
+        composeTestRule.onNodeWithTag("btn_toolbar_resize").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("resize_mode_overlay").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("resize_handle_top").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("resize_handle_left").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("resize_handle_right").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_resize_reset").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_resize_done").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("resize_size_indicator").assertTextContains("H: 100%  •  W: 100%")
+
+        // Drag top handle upward -> height increases above 100%
+        composeTestRule.onNodeWithTag("resize_handle_top").performTouchInput {
+            swipe(start = center, end = Offset(center.x, center.y - 80f), durationMillis = 120)
+        }
+        composeTestRule.waitForIdle()
+        assertTrue("Dragging top handle up must increase height (was $lastSavedHeight)", lastSavedHeight > 100)
+
+        // Drag top handle downward -> height decreases
+        val tallerHeight = lastSavedHeight
+        composeTestRule.onNodeWithTag("resize_handle_top").performTouchInput {
+            swipe(start = center, end = Offset(center.x, center.y + 140f), durationMillis = 120)
+        }
+        composeTestRule.waitForIdle()
+        assertTrue("Dragging top handle down must decrease height ($lastSavedHeight < $tallerHeight)", lastSavedHeight < tallerHeight)
+
+        // Drag right handle inward left -> width decreases below 100% (sufficient travel to clear xxhdpi touchSlop)
+        composeTestRule.onNodeWithTag("resize_handle_right").performTouchInput {
+            swipe(start = center, end = Offset(center.x - 150f, center.y), durationMillis = 150)
+        }
+        composeTestRule.waitForIdle()
+        assertTrue("Dragging right handle inward must decrease width (was $lastSavedWidth)", lastSavedWidth < 100)
+
+        // Drag left handle outward left -> width increases back
+        val narrowerWidth = lastSavedWidth
+        composeTestRule.onNodeWithTag("resize_handle_left").performTouchInput {
+            swipe(start = center, end = Offset(center.x - 120f, center.y), durationMillis = 150)
+        }
+        composeTestRule.waitForIdle()
+        assertTrue("Dragging left handle outward must increase width ($lastSavedWidth > $narrowerWidth)", lastSavedWidth > narrowerWidth)
+
+        // Tap Reset -> restores 100% x 100%
+        composeTestRule.onNodeWithTag("btn_resize_reset").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(100, lastSavedHeight)
+        assertEquals(100, lastSavedWidth)
+        composeTestRule.onNodeWithTag("resize_size_indicator").assertTextContains("H: 100%  •  W: 100%")
+
+        // Resize both height and width, then tap Done
+        composeTestRule.onNodeWithTag("resize_handle_top").performTouchInput {
+            swipe(start = center, end = Offset(center.x, center.y - 90f), durationMillis = 120)
+        }
+        composeTestRule.onNodeWithTag("resize_handle_left").performTouchInput {
+            swipe(start = center, end = Offset(center.x + 120f, center.y), durationMillis = 120)
+        }
+        composeTestRule.waitForIdle()
+        val finalHeight = lastSavedHeight
+        val finalWidth = lastSavedWidth
+        assertTrue(finalHeight > 100)
+        assertTrue(finalWidth < 100)
+
+        composeTestRule.onNodeWithTag("btn_resize_done").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("resize_mode_overlay").assertDoesNotExist()
+        assertEquals(finalHeight, currentSettings.keyboardHeightPercent)
+        assertEquals(finalWidth, currentSettings.keyboardWidthPercent)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify About Okkhor page displays Chitron Bhattacharjee attribution and independent branding`() {
+        composeTestRule.setContent {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                PrivacyAboutSection(onResetAllSettings = {})
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("about_brand_card").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Okkhor Bangla Keyboard")[0].assertIsDisplayed()
+        composeTestRule.onNodeWithTag("about_creator_card").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Creator & Developer").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Chitron Bhattacharjee").assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("about_app_info_card").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Application Information").assertIsDisplayed()
+        composeTestRule.onNodeWithText(BuildConfig.VERSION_NAME).assertIsDisplayed()
+        composeTestRule.onNodeWithText(BuildConfig.VERSION_CODE.toString()).assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("about_product_info_card").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("about_privacy_card").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("about_opensource_card").performScrollTo().assertIsDisplayed()
+
+        composeTestRule.onNodeWithText("PixelBoard", substring = true, ignoreCase = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("Gboard", substring = true, ignoreCase = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `verify Backspace deletes partial, multi-paragraph, and Bangla selected text accurately`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+
+        try {
+            // Test A: "I am a boy", select "am" -> Backspace deletes only "am"
+            val editText = EditText(context)
+            editText.setText("I am a boy")
+            editText.setSelection(2, 4) // "am"
+            val info = EditorInfo().apply {
+                initialSelStart = 2
+                initialSelEnd = 4
+            }
+            val ic = editText.onCreateInputConnection(info)!!
+            service.setTestBinding(ic, info)
+            service.onStartInputView(info, false)
+            assertTrue("Selection must be detected on start", service.hasSelectionState)
+
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("I  a boy", editText.text.toString())
+            assertEquals(2, editText.selectionStart)
+            assertEquals(2, editText.selectionEnd)
+            assertFalse("Selection flag must clear after delete", service.hasSelectionState)
+
+            // Test C: Multi-paragraph selection -> Backspace deletes complete paragraph block
+            val multiParagraph = "First paragraph line.\nSecond paragraph with details.\nThird final line."
+            editText.setText(multiParagraph)
+            editText.setSelection(0, multiParagraph.length - "Third final line.".length)
+            val infoMulti = EditorInfo().apply {
+                initialSelStart = editText.selectionStart
+                initialSelEnd = editText.selectionEnd
+            }
+            val icMulti = editText.onCreateInputConnection(infoMulti)!!
+            service.setTestBinding(icMulti, infoMulti)
+            service.onStartInputView(infoMulti, false)
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("Third final line.", editText.text.toString())
+            assertEquals(0, editText.selectionStart)
+
+            // Test E: Bangla text with যুক্তাক্ষর and কার selected -> clean replacement without orphans
+            val banglaSample = "বাংলাদেশের বিজ্ঞান ও প্রযুক্তি এগিয়ে যাচ্ছে"
+            editText.setText(banglaSample)
+            val selStart = banglaSample.indexOf("বিজ্ঞান")
+            val selEnd = selStart + "বিজ্ঞান".length
+            editText.setSelection(selStart, selEnd)
+            val infoBn = EditorInfo().apply {
+                initialSelStart = selStart
+                initialSelEnd = selEnd
+            }
+            val icBn = editText.onCreateInputConnection(infoBn)!!
+            service.setTestBinding(icBn, infoBn)
+            service.onStartInputView(infoBn, false)
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("বাংলাদেশের  ও প্রযুক্তি এগিয়ে যাচ্ছে", editText.text.toString())
+            assertEquals(selStart, editText.selectionStart)
+
+            // Undo restores deleted Bangla word; Redo re-deletes it
+            assertTrue(service.canUndoState)
+            service.handleTextEditAction("UNDO")
+            assertEquals(banglaSample, editText.text.toString())
+            assertTrue(service.canRedoState)
+            service.handleTextEditAction("REDO")
+            assertEquals("বাংলাদেশের  ও প্রযুক্তি এগিয়ে যাচ্ছে", editText.text.toString())
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun `verify Copy, Cut, Paste, Select All and Cursor Selection Mode work cleanly`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+        try {
+            val editText = EditText(context)
+            editText.setText("I am a boy")
+            editText.setSelection(2, 4) // "am"
+            val info = EditorInfo().apply {
+                initialSelStart = 2
+                initialSelEnd = 4
+            }
+            val ic = editText.onCreateInputConnection(info)!!
+            service.setTestBinding(ic, info)
+            service.onStartInputView(info, false)
+
+            // Test B: Copy "am" keeps text intact and puts "am" in ClipboardManager
+            service.handleTextEditAction("COPY")
+            assertEquals("I am a boy", editText.text.toString())
+            assertEquals("am", cm.primaryClip?.getItemAt(0)?.text?.toString())
+            assertTrue(service.canPasteState)
+
+            // Test D: Cut removes "am" and puts it in clipboard
+            service.handleTextEditAction("CUT")
+            assertEquals("I  a boy", editText.text.toString())
+            assertEquals("am", cm.primaryClip?.getItemAt(0)?.text?.toString())
+            assertFalse(service.hasSelectionState)
+
+            // Paste inserts "am" back at cursor
+            service.handleTextEditAction("PASTE")
+            assertEquals("I am a boy", editText.text.toString())
+
+            // Select All selects entire content
+            service.handleTextEditAction("SELECT_ALL")
+            assertEquals(0, editText.selectionStart)
+            assertEquals("I am a boy".length, editText.selectionEnd)
+            assertTrue(service.hasSelectionState)
+
+            // Cursor movement & Selection Mode across Unicode emojis (no text loss or surrogate splitting)
+            editText.setText("Hi 😀 বাংলাদেশের")
+            editText.setSelection(6) // right after "Hi 😀 "
+            val infoMove = EditorInfo().apply {
+                initialSelStart = 6
+                initialSelEnd = 6
+            }
+            val icMove = editText.onCreateInputConnection(infoMove)!!
+            service.setTestBinding(icMove, infoMove)
+            service.onStartInputView(infoMove, false)
+
+            service.moveCursor(-2) // skip space + entire 😀 surrogate pair safely
+            assertEquals(3, editText.selectionStart)
+            assertEquals("Hi 😀 বাংলাদেশের", editText.text.toString())
+
+            // Toggle Selection Mode ON and extend right 1 unit (across 😀 surrogate pair)
+            service.handleTextEditAction("TOGGLE_SELECTION_MODE")
+            assertTrue(service.isSelectionMode)
+            service.moveCursor(1)
+            assertEquals(3, editText.selectionStart)
+            assertEquals(5, editText.selectionEnd)
+            assertEquals("😀", editText.text.substring(editText.selectionStart, editText.selectionEnd))
+            assertTrue(service.hasSelectionState)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify TextEditingPanel hides unavailable Undo Redo and disables Cut Copy Paste accurately`() {
+        var isUndoAvailable by mutableStateOf(false)
+        var isSelectionActive by mutableStateOf(false)
+        var isClipboardPasteable by mutableStateOf(false)
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                canUndo = isUndoAvailable,
+                canRedo = false,
+                hasSelection = isSelectionActive,
+                canPaste = isClipboardPasteable,
+                onKeyPress = {},
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = {},
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {}
+            )
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("btn_suggestion_undo").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("btn_suggestion_redo").assertDoesNotExist()
+
+        composeTestRule.onNodeWithTag("btn_toolbar_text_edit").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("text_editing_panel").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_edit_undo").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("btn_edit_cut").assertIsNotEnabled()
+        composeTestRule.onNodeWithTag("btn_edit_copy").assertIsNotEnabled()
+        composeTestRule.onNodeWithTag("btn_edit_paste").assertIsNotEnabled()
+
+        // Enable selection and undo -> controls activate honestly
+        isSelectionActive = true
+        isUndoAvailable = true
+        isClipboardPasteable = true
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("btn_edit_undo").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_suggestion_undo").assertIsDisplayed()
+    }
+
+    @Test
+    fun `verify complete Unicode emoji dataset, categories, variants, Bangla and phonetic search`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = UnicodeEmojiRepository.getInstance(context)
+        val all = repo.getAllEmojis()
+
+        // Full Unicode dataset (must not be a small hardcoded subset)
+        assertTrue("Expected > 1800 base Unicode emojis, got ${all.size}", all.size > 1800)
+
+        // All 9 standard categories populated
+        for (cat in EmojiCategory.STANDARD_CATEGORIES) {
+            val catItems = repo.getByCategory(cat.id)
+            assertTrue("Category ${cat.labelEn} must not be empty", catItems.isNotEmpty())
+        }
+
+        // Skin tone variants, ZWJ sequences, regional flags, keycaps present
+        val wave = repo.findByUnicode("👋")
+        assertNotNull("Waving hand emoji must exist", wave)
+        assertTrue("Skin tone variants expected for 👋", (wave?.variants?.size ?: 0) >= 5)
+        assertNotNull("Bangladesh flag 🇧🇩 must exist", repo.findByUnicode("🇧🇩"))
+        assertNotNull("Keycap 1️⃣ must exist", repo.findByUnicode("1️⃣"))
+        assertTrue("Family ZWJ emojis expected", repo.search("family").isNotEmpty())
+
+        // English, Bangla, and Latin-phonetic search
+        assertTrue(repo.search("love").isNotEmpty())
+        assertTrue(repo.search("heart").isNotEmpty())
+        assertTrue("Bangla search 'বৃষ্টি' must match weather emojis", repo.search("বৃষ্টি").isNotEmpty())
+        assertTrue("Bangla search 'খুশি' must match happy emojis", repo.search("খুশি").isNotEmpty())
+        assertTrue("Phonetic search 'brishti' must match weather emojis", repo.search("brishti").isNotEmpty())
+
+        // Emoji cluster single-step Backspace deletion checks
+        assertEquals(4, BanglaUnicodeHelper.calculateBackspaceLength("🇧🇩"))
+        assertEquals(3, BanglaUnicodeHelper.calculateBackspaceLength("1️⃣"))
+        assertEquals(4, BanglaUnicodeHelper.calculateBackspaceLength("👍🏽"))
+        assertEquals("👨‍👩‍👧".length, BanglaUnicodeHelper.calculateBackspaceLength("👨‍👩‍👧"))
+    }
+
+    @Test
+    fun `verify GiphyRepository handles unconfigured key, trending, search, categories, and autocomplete`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        // 1. Unconfigured API key reports Unconfigured state honestly
+        val unconfiguredRepo = GiphyRepository(
+            context = context,
+            apiKeyOverride = "",
+            networkCheckOverride = { true }
+        )
+        assertFalse(unconfiguredRepo.isConfigured())
+        runBlocking {
+            assertEquals(GifSearchUiState.Unconfigured, unconfiguredRepo.fetchTrending())
+        }
+
+        // 2. Local Mock GIPHY HTTP API server verifying real REST request/response parsing
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/v1/gifs/trending") { ex ->
+            val json = """
+                {
+                  "data": [
+                    {
+                      "id": "gif_1",
+                      "title": "Happy Dance",
+                      "images": {
+                        "fixed_width_small": { "url": "http://127.0.0.1:${server.address.port}/preview.gif", "width": "150", "height": "120" },
+                        "downsized_medium": { "url": "http://127.0.0.1:${server.address.port}/full.gif", "width": "320", "height": "240" }
+                      }
+                    }
+                  ],
+                  "pagination": { "total_count": 10, "count": 1, "offset": 0 }
+                }
+            """.trimIndent()
+            val bytes = json.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.createContext("/v1/gifs/search") { ex ->
+            val json = """
+                {
+                  "data": [
+                    {
+                      "id": "gif_love",
+                      "title": "Bangla Eid Celebration",
+                      "images": {
+                        "fixed_width_small": { "url": "http://127.0.0.1:${server.address.port}/eid_preview.gif", "width": "160", "height": "120" },
+                        "downsized_medium": { "url": "http://127.0.0.1:${server.address.port}/eid_full.gif", "width": "300", "height": "220" }
+                      }
+                    }
+                  ],
+                  "pagination": { "total_count": 1, "count": 1, "offset": 0 }
+                }
+            """.trimIndent()
+            val bytes = json.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.createContext("/v1/gifs/search/tags") { ex ->
+            val json = """{"data":[{"name":"happy birthday"},{"name":"happy dance"}]}"""
+            val bytes = json.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+
+        try {
+            val baseUrl = "http://127.0.0.1:${server.address.port}"
+            val repo = GiphyRepository(
+                context = context,
+                baseUrl = baseUrl,
+                apiKeyOverride = "test_key_12345",
+                networkCheckOverride = { true }
+            )
+            assertTrue(repo.isConfigured())
+
+            runBlocking {
+                val trending = repo.fetchTrending() as GifSearchUiState.Success
+                assertEquals(1, trending.items.size)
+                assertEquals("gif_1", trending.items.first().id)
+                assertTrue(trending.hasMore)
+
+                val searched = repo.searchGifs("eid") as GifSearchUiState.Success
+                assertEquals("gif_love", searched.items.first().id)
+
+                val tags = repo.fetchSearchSuggestions("hap")
+                assertEquals(listOf("happy birthday", "happy dance"), tags)
+            }
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `verify EmojiKitchenEngine renders PNG mashups and commitContent checks editor MIME support`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        // 1. Compatible pair discovery and search
+        assertTrue(EmojiKitchenEngine.isCompatiblePair("😀", "❤️"))
+        assertFalse(EmojiKitchenEngine.isCompatiblePair("😀", "😀"))
+        assertTrue(EmojiKitchenEngine.searchCompatiblePairs("বৃষ্টি").isNotEmpty())
+        assertTrue(EmojiKitchenEngine.searchCompatiblePairs("joy").isNotEmpty())
+
+        // 2. Render and save real PNG mashup file
+        val bmp = EmojiKitchenEngine.renderMashupBitmap("😀", "❤️", EmojiMashupStyle.FUSION_BLEND, 192)
+        assertEquals(192, bmp.width)
+        assertEquals(192, bmp.height)
+        val savedPng = EmojiKitchenEngine.saveMashupPng(context, "😀", "❤️", EmojiMashupStyle.FUSION_BLEND)
+        assertTrue(savedPng.exists() && savedPng.length() > 100L)
+
+        // 3. IME commitContent capability check on unsupported vs supported editors
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        try {
+            val editText = EditText(context)
+
+            // Unsupported plain text field -> declines insertion honestly with notice
+            val plainInfo = EditorInfo()
+            val plainIc = editText.onCreateInputConnection(plainInfo)!!
+            service.setTestBinding(plainIc, plainInfo)
+            service.onStartInputView(plainInfo, false)
+            assertFalse(service.supportsImageCommit)
+            assertFalse(service.supportsGifCommit)
+            val rejected = service.commitMashup("😀", "❤️", EmojiMashupStyle.FUSION_BLEND)
+            assertFalse(rejected)
+            assertNotNull("Must report honest fallback notice when editor lacks image MIME support", service.mediaInsertNotice)
+
+            // Supported image/png & image/gif editor via EditorInfoCompat
+            var receivedMimeTypes: Array<String> = emptyArray()
+            val richInfo = EditorInfo()
+            val baseIc = editText.onCreateInputConnection(richInfo)!!
+            EditorInfoCompat.setContentMimeTypes(richInfo, arrayOf("image/png", "image/gif"))
+            @Suppress("DEPRECATION")
+            val richIc = androidx.core.view.inputmethod.InputConnectionCompat.createWrapper(
+                baseIc,
+                richInfo
+            ) { inputContentInfo, _, _ ->
+                receivedMimeTypes = Array(inputContentInfo.description.mimeTypeCount) { idx ->
+                    inputContentInfo.description.getMimeType(idx)
+                }
+                true
+            }
+            service.setTestBinding(richIc, richInfo)
+            service.onStartInputView(richInfo, false)
+            assertTrue(service.supportsImageCommit)
+            assertTrue(service.supportsGifCommit)
+            val accepted = service.commitMashup("😀", "❤️", EmojiMashupStyle.AURA_HALO)
+            assertTrue("commitMashup must succeed when editor handles commitContent", accepted)
+            assertEquals(listOf("image/png"), receivedMimeTypes.toList())
+            assertNull(service.mediaInsertNotice)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify EmojiGifKitchenPanel renders Emoji search, GIF tab, and Emoji Kitchen Mashups`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val emojiRepo = UnicodeEmojiRepository.getInstance(context)
+        val committed = mutableListOf<String>()
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(gifSearchEnabled = false),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.EMOJI,
+                lastTextMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                emojiRepository = emojiRepo,
+                onKeyPress = {},
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = {},
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {},
+                onEmojiSelected = { _, unicode -> committed.add(unicode) }
+            )
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("emoji_gif_kitchen_panel").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("tab_emoji").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("tab_gif").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("tab_kitchen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("emoji_grid").assertIsDisplayed()
+
+        // Switch to GIF tab -> shows honest notice when GIF search disabled
+        composeTestRule.onNodeWithTag("tab_gif").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Online GIF Search is Disabled").assertIsDisplayed()
+
+        // Switch to Kitchen tab -> shows slots and all 4 live mashup cards
+        composeTestRule.onNodeWithTag("tab_kitchen").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("kitchen_slot_1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("kitchen_slot_2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("mashup_card_fusion").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("mashup_card_halo").assertIsDisplayed()
+    }
+
+    @Test
+    fun `verify recent emoji ranking deduplication frequency prioritization and dock limit`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = KeyboardPreferencesRepository.getInstance(context)
+
+        val ranked = KeyboardPreferencesRepository.rankRecentEmojisForDock(
+            recent = listOf("😀", "❤️", "😀", "🇧🇩", "🎉", "🙏", "👍"),
+            frequency = mapOf("❤️" to 6, "🙏" to 12, "😀" to 3),
+            limit = 4
+        )
+        assertEquals(4, ranked.size)
+        assertEquals(ranked.distinct().size, ranked.size)
+        assertEquals("🙏", ranked.first())
+
+        repo.updateSettings { it.copy(recentEmojiDockCount = 15) }
+        assertEquals(12, repo.settings.value.recentEmojiDockCount)
+        repo.updateSettings { it.copy(recentEmojiDockCount = 2) }
+        assertEquals(4, repo.settings.value.recentEmojiDockCount)
+        repo.updateSettings { it.copy(recentEmojiDockCount = 6) }
+
+        repeat(4) { repo.recordEmojiUse("🔥") }
+        repo.recordEmojiUse("🎉")
+        val dockEmojis = repo.getDockRecentEmojis()
+        assertTrue(dockEmojis.contains("🔥"))
+        assertTrue(dockEmojis.size <= 6)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify Emoji Quick Access Dock opens on long press and normal tap opens full Emoji panel`() {
+        var switchedMode: InputMode? = null
+        val selectedEmojis = mutableListOf<String>()
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(recentEmojiDockCount = 5),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                recentEmojis = listOf("😀", "❤️", "🇧🇩", "🙏", "🎉"),
+                emojiFrequency = mapOf("❤️" to 4),
+                onKeyPress = {},
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = { switchedMode = it },
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {},
+                onEmojiSelected = { _, unicode -> selectedEmojis.add(unicode) }
+            )
+        }
+
+        composeTestRule.waitForIdle()
+        // 1. Normal quick tap opens full Emoji panel
+        composeTestRule.onNodeWithTag("btn_emoji").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(InputMode.EMOJI, switchedMode)
+        switchedMode = null
+
+        // 2. Long press opens EmojiQuickAccessDock & backdrop dim scrim; releasing outside cancels safely
+        composeTestRule.onNodeWithTag("btn_emoji").performTouchInput {
+            down(center)
+        }
+        composeTestRule.mainClock.advanceTimeBy(600L)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("emoji_quick_dock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("keyboard_gesture_dim_scrim").assertIsDisplayed()
+
+        // Drag upward above dock bounds and release -> safely closes without selecting
+        composeTestRule.onNodeWithTag("btn_emoji").performTouchInput {
+            moveTo(Offset(center.x, center.y - 260f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("emoji_quick_dock").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify Spacebar swipe switches language on release, cancels on center return, and supports cursor hold`() {
+        var currentMode by mutableStateOf(InputMode.BANGLA_PHONETIC)
+        val committedActions = mutableListOf<Int>()
+        val cursorMoves = mutableListOf<Int>()
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(
+                    spacebarCursorSwipe = true,
+                    spacebarLanguageSwipe = true
+                ),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = currentMode,
+                isShifted = false,
+                candidates = emptyList(),
+                onKeyPress = {},
+                onActionKey = { committedActions.add(it) },
+                onCandidateClick = {},
+                onModeSwitch = { currentMode = it },
+                onCursorMove = { cursorMoves.add(it) },
+                onOpenSettings = {},
+                onOpenClipboard = {}
+            )
+        }
+
+        composeTestRule.waitForIdle()
+
+        // 1. Tap commits normal space without switching mode
+        composeTestRule.onNodeWithTag("spacebar").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(listOf(KeyboardLayouts.CODE_SPACE), committedActions)
+        assertEquals(InputMode.BANGLA_PHONETIC, currentMode)
+
+        // 2. Horizontal swipe right shows preview, then returning to center before release cancels switch
+        composeTestRule.onNodeWithTag("spacebar").performTouchInput {
+            down(center)
+            moveBy(Offset(140f, 0f))
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("floating_language_switcher").assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("spacebar").performTouchInput {
+            moveTo(center)
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(InputMode.BANGLA_PHONETIC, currentMode)
+        composeTestRule.onNodeWithTag("floating_language_switcher").assertDoesNotExist()
+
+        // 3. Horizontal swipe right past commit threshold switches BANGLA_PHONETIC -> BANGLA_FIXED on release
+        composeTestRule.onNodeWithTag("spacebar").performTouchInput {
+            down(center)
+            moveBy(Offset(160f, 0f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(InputMode.BANGLA_FIXED, currentMode)
+
+        // 4. Long hold >= 360ms then horizontal drag moves cursor without switching mode or inserting space
+        val spacesBeforeHold = committedActions.size
+        composeTestRule.onNodeWithTag("spacebar").performTouchInput {
+            down(center)
+        }
+        composeTestRule.mainClock.advanceTimeBy(400L)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("spacebar").performTouchInput {
+            moveBy(Offset(-90f, 0f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(InputMode.BANGLA_FIXED, currentMode)
+        assertEquals(spacesBeforeHold, committedActions.size)
+        assertTrue("Expected cursor movement during hold+drag", cursorMoves.isNotEmpty())
+    }
+
+    @Test
+    fun `verify Backspace word swipe deletes Bangla conjunct and English words and Undo restores`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        try {
+            val editText = EditText(context)
+
+            // 1. English word before cursor
+            editText.setText("Hello world")
+            editText.setSelection(editText.text.length)
+            val enInfo = EditorInfo().apply {
+                initialSelStart = editText.selectionStart
+                initialSelEnd = editText.selectionEnd
+            }
+            val enIc = editText.onCreateInputConnection(enInfo)!!
+            service.setTestBinding(enIc, enInfo)
+            service.onStartInputView(enInfo, false)
+            service.deleteWordBeforeCursor()
+            assertEquals("Hello ", editText.text.toString())
+
+            // Undo restores deleted English word
+            assertTrue(service.canUndoState)
+            service.handleTextEditAction("UNDO")
+            assertEquals("Hello world", editText.text.toString())
+
+            // 2. Bangla conjunct word before cursor
+            val bnSentence = "বাংলাদেশের বিজ্ঞান"
+            editText.setText(bnSentence)
+            editText.setSelection(bnSentence.length)
+            val bnInfo = EditorInfo().apply {
+                initialSelStart = bnSentence.length
+                initialSelEnd = bnSentence.length
+            }
+            val bnIc = editText.onCreateInputConnection(bnInfo)!!
+            service.setTestBinding(bnIc, bnInfo)
+            service.onStartInputView(bnInfo, false)
+            service.deleteWordBeforeCursor()
+            assertEquals("বাংলাদেশের ", editText.text.toString())
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify Backspace Compose swipe left invokes onDeleteWordSwipe and Shift hold drag works`() {
+        var wordDeleteCount = 0
+        val typedKeys = mutableListOf<String>()
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(backspaceSwipeDelete = true),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                onKeyPress = { typedKeys.add(it) },
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = {},
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {},
+                onDeleteWordSwipe = { wordDeleteCount++ }
+            )
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("btn_backspace").performTouchInput {
+            down(center)
+            moveBy(Offset(-120f, 0f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(1, wordDeleteCount)
+    }
+
+    @Test
+    fun `verify Smart Clipboard OTP hint is suppressed in password fields and shown in normal fields`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+        try {
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("otp", "Your OTP code is 519204"))
+            val editText = EditText(context)
+
+            // Normal text field -> OTP hint populated
+            val normalInfo = EditorInfo().apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+            }
+            val normalIc = editText.onCreateInputConnection(normalInfo)!!
+            service.setTestBinding(normalIc, normalInfo)
+            service.onStartInputView(normalInfo, false)
+            assertNotNull(service.clipboardSmartHint)
+            assertEquals("519204", service.clipboardSmartHint?.value)
+
+            // Snippet insert commits OTP cleanly
+            service.insertTextSnippet("519204")
+            assertEquals("519204", editText.text.toString())
+
+            // Password field -> suppressed for privacy
+            editText.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            val passInfo = EditorInfo()
+            val passIc = editText.onCreateInputConnection(passInfo)!!
+            passInfo.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            service.setTestBinding(passIc, passInfo)
+            service.onStartInputView(passInfo, false)
+            assertNull(service.clipboardSmartHint)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify Smart OTP pill, ClipboardQuickDock, SymbolQuickDock, AlternateCharDock, DateTime, Translation, and Floating Mode`() {
+        val insertedSnippets = mutableListOf<String>()
+        val pressedKeys = mutableListOf<String>()
+        var currentSettings by mutableStateOf(KeyboardSettings())
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = currentSettings,
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                clipboardSmartHint = com.example.okkhor.engine.ClipboardSmartHint(
+                    value = "842109",
+                    label = "OTP: 842109",
+                    isOtp = true,
+                    isUrl = false
+                ),
+                clipboardItems = listOf(
+                    ClipboardItem(id = "c1", text = "Dhaka Bangladesh", timestamp = 1000L, isPinned = true)
+                ),
+                onKeyPress = { pressedKeys.add(it) },
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = {},
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {},
+                onUpdateSettings = { updater -> currentSettings = updater(currentSettings) },
+                onInsertTextSnippet = { insertedSnippets.add(it) }
+            )
+        }
+
+        composeTestRule.waitForIdle()
+
+        // 1. Smart OTP pill inserts code on tap
+        composeTestRule.onNodeWithTag("btn_toolbar_smart_clip").assertIsDisplayed().performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(listOf("842109"), insertedSnippets)
+
+        // 2. Long press Clipboard icon opens ClipboardQuickDock and inserts clip item
+        composeTestRule.onNodeWithTag("btn_toolbar_clipboard").performTouchInput {
+            down(center)
+        }
+        composeTestRule.mainClock.advanceTimeBy(650L)
+        composeTestRule.onNodeWithTag("btn_toolbar_clipboard").performTouchInput {
+            up()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("clipboard_quick_dock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("clipboard_dock_item_0").performClick()
+        composeTestRule.waitForIdle()
+        assertTrue(insertedSnippets.contains("Dhaka Bangladesh"))
+
+        // 3. Long press ?123 opens SymbolQuickDock
+        composeTestRule.onNodeWithTag("btn_symbol_key").performTouchInput {
+            down(center)
+        }
+        composeTestRule.mainClock.advanceTimeBy(600L)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("symbol_quick_dock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_symbol_key").performTouchInput { up() }
+        composeTestRule.waitForIdle()
+
+        // 4. Long press 'a' opens AlternateCharDock & tapping first alternate commits '@'
+        composeTestRule.onNodeWithTag("key_a").performTouchInput {
+            down(center)
+        }
+        composeTestRule.mainClock.advanceTimeBy(650L)
+        composeTestRule.onNodeWithTag("key_a").performTouchInput {
+            up()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("alternate_char_dock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("alt_char_option_0").performClick()
+        composeTestRule.waitForIdle()
+        assertTrue(pressedKeys.contains("@"))
+
+        // 5. Open Quick Tools -> Date & Time Dock -> insert formatted option
+        composeTestRule.onNodeWithTag("btn_quick_tools").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("tool_datetime").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("datetime_quick_dock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("datetime_option_iso_date").performClick()
+        composeTestRule.waitForIdle()
+        assertTrue(insertedSnippets.any { Regex("""\d{4}-\d{2}-\d{2}""").matches(it) })
+
+        // 6. Open Quick Tools -> Translate Dock -> swap + translate offline
+        composeTestRule.onNodeWithTag("btn_quick_tools").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("tool_translate").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("translation_quick_dock").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_translate_swap").performClick()
+        composeTestRule.onNodeWithTag("translation_dock_close").performClick()
+        composeTestRule.waitForIdle()
+
+        // 7. Toggle Floating Mode -> displays drag handle bar & Dock button restores docked mode
+        composeTestRule.onNodeWithTag("btn_quick_tools").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("tool_floating").performClick()
+        composeTestRule.waitForIdle()
+        assertTrue(currentSettings.floatingKeyboardMode)
+        composeTestRule.onNodeWithTag("floating_drag_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_exit_floating_mode").performClick()
+        composeTestRule.waitForIdle()
+        assertFalse(currentSettings.floatingKeyboardMode)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify granular haptic settings, glide, floating, and dock count persist in repository and UI`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = KeyboardPreferencesRepository.getInstance(context)
+
+        repo.updateSettings {
+            it.copy(
+                spacebarLanguageSwipe = false,
+                glideTypingEnabled = false,
+                floatingKeyboardMode = true,
+                hapticKeypress = false,
+                hapticDockOpen = true,
+                hapticGestureComplete = false,
+                hapticIntensityPercent = 30
+            )
+        }
+        assertFalse(repo.settings.value.spacebarLanguageSwipe)
+        assertFalse(repo.settings.value.glideTypingEnabled)
+        assertTrue(repo.settings.value.floatingKeyboardMode)
+        assertFalse(repo.settings.value.hapticKeypress)
+        assertTrue(repo.settings.value.hapticDockOpen)
+        assertFalse(repo.settings.value.hapticGestureComplete)
+        assertEquals(30, repo.settings.value.hapticIntensityPercent)
+
+        var current by mutableStateOf(repo.settings.value)
+        composeTestRule.setContent {
+            val scroll = rememberScrollState()
+            Box(modifier = Modifier.fillMaxWidth().verticalScroll(scroll)) {
+                InputSettingsSection(
+                    settings = current,
+                    onUpdateSettings = { updater ->
+                        current = updater(current)
+                        repo.updateSettings { current }
+                    }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("switch_spacebar_language_swipe").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("haptic_intensity_70").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(70, repo.settings.value.hapticIntensityPercent)
+    }
 }
+
+
 
 
 

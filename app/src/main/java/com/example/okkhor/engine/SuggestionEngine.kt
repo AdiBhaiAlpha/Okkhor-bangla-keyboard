@@ -105,6 +105,14 @@ class SuggestionEngine(
                             candidates.add(match)
                         }
                     }
+
+                    // 5b. Smart conjunct (যুক্তাক্ষর) & common Bangla spelling corrections
+                    val conjunctEnhancements = BanglaConjunctHelper.getEnhancements(input, transliterated)
+                    for (enh in conjunctEnhancements) {
+                        if (!candidates.contains(enh)) {
+                            candidates.add(enh)
+                        }
+                    }
                 }
 
                 // 6. Raw Latin input as a fallback candidate so the user can easily keep what was typed
@@ -124,6 +132,12 @@ class SuggestionEngine(
                 val matches = BanglaDictionary.findWordSuggestions(input, maxResults = maxCandidates)
                 for (m in matches) {
                     if (!candidates.contains(m)) candidates.add(m)
+                }
+
+                // 3. Conjunct & spelling enhancements
+                val enhancements = BanglaConjunctHelper.getEnhancements("", input)
+                for (enh in enhancements) {
+                    if (!candidates.contains(enh)) candidates.add(enh)
                 }
             }
 

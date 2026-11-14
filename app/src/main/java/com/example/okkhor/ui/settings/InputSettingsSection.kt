@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -181,16 +182,66 @@ fun InputSettingsSection(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
+                // Spacebar language switcher swipe
+                SettingToggleItem(
+                    title = "Spacebar Language Switcher",
+                    description = "Swipe left or right on the spacebar to preview and switch between Avro Phonetic, প্রভাত, and English",
+                    checked = settings.spacebarLanguageSwipe,
+                    tag = "switch_spacebar_language_swipe",
+                    onCheckedChange = { checked ->
+                        onUpdateSettings { it.copy(spacebarLanguageSwipe = checked) }
+                    }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
                 // Spacebar cursor swipe
                 SettingToggleItem(
                     title = stringResource(R.string.pref_space_swipe),
-                    description = stringResource(R.string.pref_space_swipe_desc),
+                    description = if (settings.spacebarLanguageSwipe) {
+                        "Hold the spacebar briefly then drag left or right to move the cursor"
+                    } else {
+                        stringResource(R.string.pref_space_swipe_desc)
+                    },
                     checked = settings.spacebarCursorSwipe,
                     tag = "switch_space_swipe",
                     onCheckedChange = { checked ->
                         onUpdateSettings { it.copy(spacebarCursorSwipe = checked) }
                     }
                 )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // Configurable Recent Emoji Dock count
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Recent Emoji Dock Capacity",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Number of recent emojis shown when holding the Emoji key (${settings.recentEmojiDockCount})",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf(4, 6, 8, 10, 12).forEach { count ->
+                            FilterChip(
+                                selected = settings.recentEmojiDockCount == count,
+                                onClick = {
+                                    onUpdateSettings { it.copy(recentEmojiDockCount = count) }
+                                },
+                                label = { Text("$count") },
+                                modifier = Modifier.testTag("dock_emoji_count_$count")
+                            )
+                        }
+                    }
+                }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
@@ -246,10 +297,41 @@ fun InputSettingsSection(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                // Proactive Undo Button in Suggestion Strip
+                // Glide Typing
                 SettingToggleItem(
-                    title = "Proactive Suggestion Strip Undo",
-                    description = "Show a 1-tap Undo chip after autocorrections, shortcut expansions, or deletions",
+                    title = "Glide Typing (স্লাইড টাইপিং)",
+                    description = "Slide across QWERTY letter keys continuously to form English or phonetic Bangla words",
+                    checked = settings.glideTypingEnabled,
+                    tag = "switch_glide_typing",
+                    onCheckedChange = { checked ->
+                        onUpdateSettings { it.copy(glideTypingEnabled = checked) }
+                    }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // Floating Keyboard Mode
+                SettingToggleItem(
+                    title = "Floating Keyboard Mode",
+                    description = "Detach keyboard as a movable floating window you can drag freely across the screen",
+                    checked = settings.floatingKeyboardMode,
+                    tag = "switch_floating_keyboard",
+                    onCheckedChange = { checked ->
+                        onUpdateSettings {
+                            it.copy(
+                                floatingKeyboardMode = checked,
+                                oneHandedMode = if (checked) com.example.okkhor.data.model.OneHandedMode.OFF else it.oneHandedMode
+                            )
+                        }
+                    }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // Undo button in suggestion strip
+                SettingToggleItem(
+                    title = "Suggestion Strip Undo",
+                    description = "Show a quick Undo chip after corrections, expansions, or deletions",
                     checked = settings.showUndoButton,
                     tag = "switch_undo_button",
                     onCheckedChange = { checked ->
@@ -259,10 +341,10 @@ fun InputSettingsSection(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                // Material 3 Expressive Rounded / Pill Keys
+                // Rounded pill keycaps
                 SettingToggleItem(
-                    title = "Material 3 Expressive Rounded Keys",
-                    description = "Use pill-shaped rounded keycaps inspired by PixelBoard / Belka UI",
+                    title = "Rounded Pill Keycaps",
+                    description = "Use rounded pill-shaped keycaps across the keyboard",
                     checked = settings.roundedPillKeys,
                     tag = "switch_rounded_keys",
                     onCheckedChange = { checked ->
@@ -272,9 +354,9 @@ fun InputSettingsSection(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                // Language-Aware Voice Typing
+                // Voice typing
                 SettingToggleItem(
-                    title = "Language-Aware Voice Typing",
+                    title = "Voice Typing",
                     description = "Dictate in Bangla (bn-BD) or English (en-US) from the toolbar microphone",
                     checked = settings.voiceTypingEnabled,
                     tag = "switch_voice_typing",
@@ -302,6 +384,18 @@ fun InputSettingsSection(
                         )
                     }
                 }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                SettingToggleItem(
+                    title = "Online GIF Search & Previews",
+                    description = "Allow optional network requests when searching or browsing GIFs. Typed text is never uploaded.",
+                    checked = settings.gifSearchEnabled,
+                    tag = "switch_gif_search",
+                    onCheckedChange = { checked ->
+                        onUpdateSettings { it.copy(gifSearchEnabled = checked) }
+                    }
+                )
             }
         }
 
@@ -383,6 +477,72 @@ fun InputSettingsSection(
                         onUpdateSettings { it.copy(hapticFeedback = checked) }
                     }
                 )
+
+                if (settings.hapticFeedback) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Haptic Strength (${settings.hapticIntensityPercent}%)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf(30, 50, 70, 100).forEach { pct ->
+                            FilterChip(
+                                selected = settings.hapticIntensityPercent == pct,
+                                onClick = {
+                                    onUpdateSettings { it.copy(hapticIntensityPercent = pct) }
+                                },
+                                label = { Text("$pct%") },
+                                modifier = Modifier.testTag("haptic_intensity_$pct")
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    SettingToggleItem(
+                        title = "Keypress Haptics",
+                        description = "Subtle vibration on regular key taps",
+                        checked = settings.hapticKeypress,
+                        tag = "switch_haptic_keypress",
+                        onCheckedChange = { checked ->
+                            onUpdateSettings { it.copy(hapticKeypress = checked) }
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    SettingToggleItem(
+                        title = "Long-Press & Dock Haptics",
+                        description = "Feedback when opening emoji, clipboard, or symbol floating docks",
+                        checked = settings.hapticDockOpen,
+                        tag = "switch_haptic_dock_open",
+                        onCheckedChange = { checked ->
+                            onUpdateSettings {
+                                it.copy(hapticDockOpen = checked, hapticLongPress = checked)
+                            }
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    SettingToggleItem(
+                        title = "Gesture & Language Switch Haptics",
+                        description = "Tactile ticks when previewing languages or completing swipes",
+                        checked = settings.hapticGestureComplete,
+                        tag = "switch_haptic_gesture",
+                        onCheckedChange = { checked ->
+                            onUpdateSettings {
+                                it.copy(hapticGestureComplete = checked, hapticLanguageSwitch = checked)
+                            }
+                        }
+                    )
+                }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 

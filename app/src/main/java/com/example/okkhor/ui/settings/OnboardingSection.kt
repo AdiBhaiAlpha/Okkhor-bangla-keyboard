@@ -73,7 +73,7 @@ import com.example.okkhor.ui.keyboard.KeyboardLayouts
 import com.example.ui.theme.HindSiliguri
 
 /**
- * Onboarding & Dashboard Screen matching the Luxury Obsidian + Artisan Amber Gold benchmark (Image 3)
+ * Okkhor Home & Setup Screen
  */
 @Composable
 fun OnboardingSection(
@@ -112,7 +112,7 @@ fun OnboardingSection(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // --- 1. Luxury Hero Header (Image 3) ---
+        // --- 1. Okkhor Header Card ---
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -161,7 +161,7 @@ fun OnboardingSection(
                         fontFamily = HindSiliguri
                     )
                     Text(
-                        text = "অক্ষর বাংলা কিবোর্ড • Modern Avro & Prabhat",
+                        text = "অক্ষর বাংলা কিবোর্ড • Bangla Phonetic, Probhat & English",
                         color = Color(0xFFE5A96A),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
@@ -177,7 +177,7 @@ fun OnboardingSection(
             }
         }
 
-        // --- 2. 2-Column Dashboard Action Cards (Directly matching Image 3) ---
+        // --- 2. Dashboard Action Cards ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -363,7 +363,7 @@ fun OnboardingSection(
             }
         }
 
-        // --- 5. Prominent Warm Amber Action Button: "Test your keyboard" (Image 3) ---
+        // --- 5. Action Button: "Test Your Keyboard" ---
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -400,7 +400,7 @@ fun OnboardingSection(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "টাইপিং পরীক্ষা (Interactive Live Sandbox):",
+                        text = "টাইপিং পরীক্ষা (Typing Sandbox):",
                         color = Color(0xFFE5A96A),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
@@ -410,7 +410,7 @@ fun OnboardingSection(
                     OutlinedTextField(
                         value = testText,
                         onValueChange = { testText = it },
-                        placeholder = { Text("এখানে টাইপ করে পরীক্ষা করুন (e.g. ami banglay gan gai)") },
+                        placeholder = { Text("এখানে বাংলা বা ইংরেজিতে টাইপ করে দেখুন...") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("test_typing_input"),
@@ -474,7 +474,7 @@ fun OnboardingSection(
 }
 
 /**
- * 2-Column Dashboard Action Card (Image 3)
+ * Dashboard Action Card
  */
 @Composable
 private fun DashboardActionCard(

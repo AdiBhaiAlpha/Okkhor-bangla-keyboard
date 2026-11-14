@@ -107,7 +107,7 @@ fun ThemeStudioSection(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Refined Ridmik-standard visual customization",
+                    text = "Customize colors, key shapes, and layout spacing",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -258,13 +258,13 @@ fun ThemeStudioSection(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Accent Color Studio",
+                    text = "Accent Color",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = HindSiliguri
                 )
                 Text(
-                    text = "Quickly tone Enter key, highlights, and active glyph states",
+                    text = "Adjust highlights, Enter key, and active indicator colors",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -325,7 +325,7 @@ fun ThemeStudioSection(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
-                    text = "Keycap Architecture & Proportions",
+                    text = "Keycap Dimensions & Spacing",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = HindSiliguri
@@ -395,7 +395,7 @@ fun ThemeStudioSection(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Key Tactile Elevation & 3D Lip",
+                            text = "Key Elevation & Shadow",
                             fontSize = 13.sp,
                             fontFamily = HindSiliguri
                         )
@@ -604,7 +604,7 @@ private fun ThemePresetCard(
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = "Flagship",
+                            text = "Default",
                             color = Color(preset.accentColor),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold

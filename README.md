@@ -1,34 +1,33 @@
 # Okkhor Bangla Keyboard (অক্ষর বাংলা কিবোর্ড)
 
-**Developer / Product Owner:** Chitron Bhattacharjee  
-**Category:** Bangla-specialized, Multilingual, Highly Customizable Android Input Method Editor (IME)  
-**Version:** 1.0.0
+**Creator & Developer:** Chitron Bhattacharjee  
+**Package ID:** `com.app.okkhorkeyboard`  
+**Category:** Input Method Editor (IME) — Bangla & English Android Keyboard  
+**Version:** 1.0.1 (Version Code 2)
 
 ---
 
 ## 1. Product Overview
-Okkhor Bangla Keyboard is a high-performance, responsive, and privacy-first Android keyboard that treats Bangla typing as a first-class experience. Built natively with modern Android Jetpack components, it offers seamless Avro-compatible phonetic transliteration, fixed national layout typing, English QWERTY, rich emoji & symbols, and an extensive Theme Studio.
+Okkhor Bangla Keyboard is a dedicated Android keyboard application designed for comfortable Bangla and English typing. Built with Kotlin and Jetpack Compose, it provides Bangla Phonetic (Avro-compatible) transliteration, fixed Probhat layout, English QWERTY, emoji and symbol panels, theme customization, local clipboard history, text shortcuts, voice typing, and direct on-keyboard resizing.
 
 ---
 
-## 2. Feature Matrix
+## 2. Implemented Capabilities
 
 | Feature | Status | Description |
 |---|---|---|
-| **Android IME Service** | Implemented | Genuine `InputMethodService` registered in OS with full lifecycle |
-| **Bangla Phonetic Typing** | Implemented | Avro-style romanized transliteration with conjuncts, reph, rophola, jophola, and vowel signs |
-| **Bangla Fixed Layout** | Implemented | National / Probhat style direct Bengali keyboard with shift states |
-| **English QWERTY Layout** | Implemented | Full English typing with shift, caps, and punctuation |
-| **Word Suggestions & Candidates** | Implemented | High-frequency Bengali dictionary lookup and candidate ranking strip |
-| **Theme Studio** | Implemented | 6 curated presets (Classic Teal & Gold, Okkhor Emerald, Midnight AMOLED, Paper White, Sunset Amber, High Contrast) + live interactive preview |
-| **Custom Styling Sliders** | Implemented | Real-time sliders for keyboard height scale, key corner rounding, and elevation/shadows |
-| **Theme JSON Export/Import** | Implemented | Export theme to clipboard JSON and import validated custom themes |
-| **Text Expansion Shortcuts** | Implemented | User-configurable abbreviations (e.g. `shb` -> `শুভ সকাল!`) |
-| **Opt-in Clipboard Manager** | Implemented | Local-only clipboard history with pinning, item deletion, and clear all |
-| **100% Offline Guarantee** | Implemented | Zero network permissions (`android.permission.INTERNET` omitted) |
-| **Sensitive Field Protection** | Implemented | Automatic disabling of suggestions, clipboard, and previews in password fields |
-| **Spacebar Cursor Control** | Implemented | Swipe left/right on spacebar to navigate cursor |
-| **Haptic & Sound Feedback** | Implemented | Optional keypress vibration and system audio click |
+| **Android IME Service** | Implemented | Registered `InputMethodService` with transparent rounded top corners and system-wide typing support |
+| **Bangla Phonetic Typing** | Implemented | Avro-compatible romanized transliteration with conjuncts, reph, rophola, jophola, and kar signs |
+| **Bangla Fixed Layout** | Implemented | Probhat direct Bengali keyboard layout with shift states |
+| **English QWERTY Layout** | Implemented | Stable English typing mode with single-tap shift, double-tap Caps Lock, and punctuation |
+| **Word Suggestions & Memory** | Implemented | Local Bengali/English dictionary lookup and on-device word correction & bigram memory |
+| **Emoji & Symbol Panels** | Implemented | Scrollable emoji picker, numeric keypad, and secondary symbol layouts |
+| **Direct Keyboard Resizing** | Implemented | Interactive in-keyboard height (75%–140%) and width (75%–100%) resize handles with Reset & Done |
+| **Theme Customization** | Implemented | Preset themes, accent swatches, key spacing/corner/elevation controls, and theme JSON export/import |
+| **Text Expansion Shortcuts** | Implemented | User-configurable abbreviations and phrase expansions |
+| **Clipboard Manager** | Implemented | Opt-in local clipboard history (up to 100 items) with pinning and configurable retention |
+| **Voice Typing** | Implemented | Language-aware Bangla (`bn-BD`) and English (`en-US`) dictation via Android `SpeechRecognizer` |
+| **Sensitive Field Protection** | Implemented | Automatic suppression of suggestions, learning, popups, and clipboard capture in password fields |
 
 ---
 
@@ -39,63 +38,34 @@ Okkhor Bangla Keyboard is a high-performance, responsive, and privacy-first Andr
 
 ---
 
-## 4. Build Commands
+## 4. Build & Test Commands
 To run unit and Robolectric tests:
 ```bash
-gradle testDebugUnitTest
+gradle :app:testDebugUnitTest
 ```
 
-To build debug APK:
+To build the debug APK:
 ```bash
-gradle assembleDebug
+gradle :app:assembleDebug
 ```
-The generated APK will be at:
-`app/build/outputs/apk/debug/app-debug.apk`
+Output: `app/build/outputs/apk/debug/app-debug.apk`
 
----
-
-## 5. Installation & Setup
-1. Install the APK on your Android device:
-   ```bash
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
-   ```
-2. Open the **Okkhor Bangla Keyboard** app.
-3. Follow the 2-step onboarding guide:
-   - **Step 1:** Tap "Enable in Settings" and toggle Okkhor Bangla Keyboard ON.
-   - **Step 2:** Tap "Switch Keyboard" and select Okkhor Bangla Keyboard as your active input method.
-4. Test typing immediately in the in-app Typing Sandbox!
-
----
-
-## 6. Privacy & Data Protection
-- **No Internet Access:** Okkhor Keyboard does not request or hold `android.permission.INTERNET`. No typed characters, clipboard snippets, or metrics can ever leave your phone.
-- **No Third-Party Analytics or Ads:** The app contains zero trackers or advertising SDKs.
-- **Password Shield:** When typing into password fields or numeric PIN inputs, all suggestions, learning, and clipboard logging are automatically suppressed.
-
----
-
-## 7. Architecture
+To build the signed release APK (with keystore environment variables configured):
+```bash
+gradle :app:assembleRelease
 ```
-com.example.
-├── MainActivity.kt               # Setup, Theme Studio, and Settings entry point
-├── okkhor/
-│   ├── data/
-│   │   ├── model/                # KeyboardTheme, KeyboardSettings, InputMode, ShortcutItem, ClipboardItem
-│   │   └── preferences/          # KeyboardPreferencesRepository (StateFlow persistence)
-│   ├── engine/
-│   │   ├── BanglaPhoneticEngine  # Transliteration rules, conjuncts, kar signs
-│   │   ├── BanglaUnicodeHelper   # Grapheme cluster calculation & Unicode constants
-│   │   ├── BanglaDictionary      # Common Bengali vocabulary and candidate suggestions
-│   │   └── SuggestionEngine      # Candidate ranking and autocomplete
-│   ├── ime/
-│   │   └── OkkhorInputMethodService # InputMethodService with Lifecycle & ComposeView
-│   └── ui/
-│       ├── keyboard/             # KeyboardLayouts, KeyboardContainer, Key buttons
-│       └── settings/             # Onboarding, ThemeStudio, InputSettings, Shortcuts, Privacy
-```
+Output: `app/build/outputs/apk/release/app-release.apk`
 
 ---
 
-## 8. Attribution & Licenses
-- **Crafted by:** Chitron Bhattacharjee
-- **License:** Open Source / MIT Compatible
+## 5. Privacy & Data Handling
+- **No Internet Permission:** Okkhor Bangla Keyboard does not request `android.permission.INTERNET`. Typed text, shortcuts, learned words, and clipboard items remain on your device.
+- **No Advertising or Analytics SDKs:** No third-party ad networks or telemetry trackers are included.
+- **On-Demand Microphone Access:** `RECORD_AUDIO` is requested only if you enable and use Voice Typing, and audio is processed via Android's system `SpeechRecognizer`.
+- **Sensitive Field Protection:** Autocorrect, candidate suggestions, word learning, key popups, and clipboard capture are automatically disabled in password and sensitive input fields.
+
+---
+
+## 6. Attribution & Third-Party Licenses
+- **Creator & Developer:** Chitron Bhattacharjee
+- **Third-Party Libraries:** Okkhor uses open-source libraries including Kotlin, AndroidX / Android Jetpack, Jetpack Compose, Material 3, Material Icons, and Robolectric under their respective open-source licenses (such as the Apache License 2.0). All third-party libraries remain the property of their respective authors.

@@ -20,7 +20,7 @@
 
     <!-- Setup / Onboarding -->
     <string name="setup_title">অক্ষর কিবোর্ড চালু করুন</string>
-    <string name="setup_subtitle">দ্রুত, সাবলীল ও শতভাগ নিরাপদ বাংলা টাইপিং</string>
+    <string name="setup_subtitle">বাংলা ও ইংরেজি টাইপিংয়ের জন্য সহজ ও নিরাপদ কিবোর্ড</string>
     <string name="step_1_title">১. কিবোর্ড সক্রিয় করুন</string>
     <string name="step_1_desc">অ্যান্ড্রয়েড সিস্টেম সেটিংসে অক্ষর বাংলা কিবোর্ড অন করুন</string>
     <string name="step_1_button">সেটিংসে অন করুন</string>
@@ -34,7 +34,7 @@
     <string name="test_typing_hint">এখানে বাংলা বা ইংরেজিতে টাইপ করে দেখুন...</string>
 
     <!-- Themes -->
-    <string name="theme_studio_title">থিম স্টুডিও</string>
+    <string name="theme_studio_title">থিম কাস্টমাইজেশন</string>
     <string name="theme_presets">রেডিমেড থিম</string>
     <string name="theme_classic_bangla">ক্লাসিক টিল ও সোনালী</string>
     <string name="theme_midnight_dark">মিডনাইট ডার্ক</string>
@@ -87,14 +87,31 @@
 
     <!-- Privacy -->
     <string name="privacy_title">গোপনীয়তা ও নিরাপত্তা</string>
-    <string name="privacy_badge_offline">প্রাইভেসি-ফার্স্ট সুরক্ষা</string>
-    <string name="privacy_summary">অক্ষর বাংলা কিবোর্ড আপনার টাইপিং, শর্টকাট এবং ক্লিপবোর্ড ইতিহাস শুধু ডিভাইসে সংরক্ষণ করে এবং কোনো ইন্টারনেট পারমিশন ব্যবহার করে না। ভয়েস টাইপিং বোতাম চাপলেই কেবল সিস্টেম স্পিচ সার্ভিসের জন্য ঐচ্ছিক মাইক্রোফোন অনুমতি ব্যবহার হয়।</string>
+    <string name="privacy_badge_offline">ডিভাইসে সংরক্ষিত টাইপিং ও ইমোজি তথ্য</string>
+    <string name="privacy_summary">অক্ষর বাংলা কিবোর্ড আপনার টাইপিং, শর্টকাট, ক্লিপবোর্ড ও ইমোজি ইতিহাস শুধু ডিভাইসে সংরক্ষণ করে এবং কোনো বিজ্ঞাপন বা অ্যানালিটিক্স ব্যবহার করে না। ইন্টারনেট সংযোগ কেবল তখনই ব্যবহৃত হয় যখন আপনি নিজে GIF সার্চ বা ব্রাউজ করেন (যা সেটিংস থেকে বন্ধ করা যায়); আপনার টাইপ করা বার্তা কখনোই GIF প্রোভাইডারের কাছে পাঠানো হয় না। ভয়েস টাইপিং বোতাম চাপলেই কেবল ঐচ্ছিক মাইক্রোফোন অনুমতি ব্যবহৃত হয়।</string>
     <string name="privacy_password_policy">সংবেদনশীল ইনপুট সুরক্ষা: পাসওয়ার্ড বা ক্রেডিট কার্ড ফিল্ডে কোনো অটোকরেক্ট, সাজেশন, পপআপ বা ক্লিপবোর্ড রেকর্ড হয় না।</string>
 
     <!-- About -->
     <string name="about_title">অক্ষর সম্পর্কে</string>
-    <string name="about_developed_by">নির্মাতা: %1$s</string>
-    <string name="about_description">অক্ষর বাংলা কিবোর্ড একটি আধুনিক, দ্রুত এবং সম্পূর্ণ অফলাইন অ্যান্ড্রয়েড কিবোর্ড।</string>
+    <string name="about_brand_short">অক্ষর</string>
+    <string name="about_tagline">বাংলা ও ইংরেজিতে স্বাচ্ছন্দ্যময় টাইপিংয়ের জন্য নির্মিত একটি স্বতন্ত্র বাংলা কিবোর্ড অ্যাপ্লিকেশন।</string>
+    <string name="about_creator_role">নির্মাতা ও ডেভেলপার</string>
+    <string name="about_creator_attribution">অক্ষর বাংলা কিবোর্ডের মূল নির্মাতা ও ডেভেলপার।</string>
+    <string name="about_developed_by">নির্মাতা ও ডেভেলপার: %1$s</string>
+    <string name="about_app_info_title">অ্যাপ্লিকেশন তথ্য</string>
+    <string name="about_info_app_name">অ্যাপ্লিকেশনের নাম</string>
+    <string name="about_info_version_name">ভার্সন নাম</string>
+    <string name="about_info_version_code">ভার্সন কোড</string>
+    <string name="about_info_release">রিলিজ তথ্য</string>
+    <string name="about_info_release_value">স্টেবল রিলিজ • Android 7.0+ (API 24–36)</string>
+    <string name="about_info_languages">সমর্থিত ভাষা</string>
+    <string name="about_info_languages_value">বাংলা (ফোনেটিক, প্রভাত), ইংরেজি (US)</string>
+    <string name="about_info_category">অ্যাপ্লিকেশন ক্যাটাগরি</string>
+    <string name="about_info_category_value">ইনপুট মেথড এডিটর (IME)</string>
+    <string name="about_product_info_title">প্রোডাক্ট তথ্য</string>
+    <string name="about_description">অক্ষর বাংলা কিবোর্ডে রয়েছে বাংলা ফোনেটিক (অভ্র-সমর্থিত), প্রভাত ফিক্সড লেআউট, ইংরেজি কোয়ার্টি, বাংলা ও ইংরেজি সার্চসহ পূর্ণাঙ্গ ইউনিকোড ইমোজি, GIF সার্চ, অরিজিনাল ইমোজি ম্যাশআপ স্টিকার, টেক্সট শর্টকাট, লোকাল ক্লিপবোর্ড ইতিহাস, ভয়েস টাইপিং, থিম কাস্টমাইজেশন এবং সরাসরি কিবোর্ড আকার পরিবর্তন সুবিধা।</string>
+    <string name="about_opensource_title">থার্ড-পার্টি লাইব্রেরি ও লাইসেন্স</string>
+    <string name="about_opensource_body">Kotlin, Android Jetpack, Jetpack Compose, Material 3, Material Icons এবং Robolectric ব্যবহৃত হয়েছে, যেগুলোর স্বত্ব ও ওপেন-সোর্স লাইসেন্স (Apache License 2.0 সহ) সংশ্লিষ্ট নির্মাতাদের অধীনে সংরক্ষিত।</string>
     <string name="about_reset_all">সব সেটিংস ডিফল্ট করুন</string>
     <string name="about_reset_confirm">আপনি কি নিশ্চিত যে সমস্ত থিম ও সেটিংস মুছে ডিফল্ট অবস্থায় ফিরিয়ে নিতে চান?</string>
     <string name="confirm">নিশ্চিত করুন</string>

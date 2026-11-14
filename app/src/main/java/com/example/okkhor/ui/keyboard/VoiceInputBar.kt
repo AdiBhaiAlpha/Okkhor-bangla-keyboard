@@ -43,8 +43,7 @@ import com.example.okkhor.ime.VoiceInputState
 import com.example.ui.theme.HindSiliguri
 
 /**
- * Compact minimizable Voice Typing banner integrated cleanly above the keyboard matrix,
- * inspired by PixelBoard's ergonomic voice dictation bar.
+ * Compact minimizable Voice Typing banner integrated above the keyboard matrix.
  */
 @Composable
 fun VoiceInputBar(

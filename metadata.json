@@ -1,6 +1,6 @@
 {
   "name": "Okkhor Bangla Keyboard",
-  "description": "A feature-rich, privacy-focused Bangla and English keyboard with phonetic transliteration, customizable themes, and typing tools.",
+  "description": "An independent Android keyboard for comfortable Bangla and English typing with phonetic transliteration, fixed Bangla layout, themes, clipboard history, and direct resizing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

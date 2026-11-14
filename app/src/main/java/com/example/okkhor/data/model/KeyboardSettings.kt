@@ -35,15 +35,30 @@ data class KeyboardSettings(
     val keyPopupPreview: Boolean = true,
     val spacebarCursorSwipe: Boolean = true,
     val backspaceSwipeDelete: Boolean = true,
-    val keyboardHeightPercent: Int = 100, // 80% to 135%
+    val keyboardHeightPercent: Int = 100, // 75% to 140%
+    val keyboardWidthPercent: Int = 100,  // 75% to 100%
     val clipboardHistoryEnabled: Boolean = true,
     val clipboardRetentionHours: Int = 24, // 1, 24, 168 (7d), 720 (30d), -1 (Never)
     val showUndoButton: Boolean = true,
     val voiceTypingEnabled: Boolean = true,
+    val gifSearchEnabled: Boolean = true,
     val roundedPillKeys: Boolean = false,
     val oneHandedMode: OneHandedMode = OneHandedMode.OFF,
     val longPressSymbolsEnabled: Boolean = true,
     val smartDoubleSpacePeriod: Boolean = true,
+    val recentEmojiDockCount: Int = 8,
+    val spacebarLanguageSwipe: Boolean = true,
+    val hapticKeypress: Boolean = true,
+    val hapticLongPress: Boolean = true,
+    val hapticGestureComplete: Boolean = true,
+    val hapticDockOpen: Boolean = true,
+    val hapticLanguageSwitch: Boolean = true,
+    val hapticIntensityPercent: Int = 70,
+    val glideTypingEnabled: Boolean = true,
+    val floatingKeyboardMode: Boolean = false,
+    val floatingOffsetX: Float = 0f,
+    val floatingOffsetY: Float = 0f,
+    val customTranslationUrl: String = "",
     val customThemeJson: String = ""
 )
 

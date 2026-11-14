@@ -118,7 +118,7 @@ data class KeyboardTheme(
             }
         }
 
-        // 1. Flagship Signature: Okkhor Comfort Slate (Eye-friendly, distinct borders, Ridmik-standard)
+        // 1. Default Theme: Okkhor Emerald Slate
         val OkkhorEmerald = KeyboardTheme(
             id = "okkhor_emerald",
             name = "Okkhor Emerald Slate",
@@ -292,7 +292,7 @@ data class KeyboardTheme(
             keySpacingDp = 4.0f
         )
 
-        // 7. Obsidian Amber Gold (Luxury obsidian dark with warm artisan amber accents - Image 3 benchmark)
+        // 7. Obsidian Amber Gold
         val ObsidianAmber = KeyboardTheme(
             id = "obsidian_amber",
             name = "Obsidian Amber Gold",
