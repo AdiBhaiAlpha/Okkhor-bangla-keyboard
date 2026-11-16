@@ -38,9 +38,10 @@ object EnglishDictionary {
     )
 
     val COMMON_WORDS: List<String> = listOf(
-        // Pronouns & Core
-        "I", "I'm", "I'll", "I've", "I'd", "you", "you're", "your", "yours", "we", "we're", "our",
-        "they", "they're", "their", "he", "she", "it", "it's", "its", "this", "that", "these", "those",
+        // Articles, Determiners, Pronouns & Core
+        "the", "a", "an", "I", "I'm", "I'll", "I've", "I'd", "you", "you're", "your", "yours", "we", "we're", "our",
+        "they", "they're", "their", "them", "he", "she", "it", "it's", "its", "this", "that", "these", "those",
+        "here", "there", "then",
         // Auxiliaries & Verbs
         "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
         "don't", "doesn't", "didn't", "can", "can't", "cannot", "could", "couldn't", "will", "won't",
@@ -59,6 +60,7 @@ object EnglishDictionary {
         "buy", "buying", "start", "starting", "started", "stop", "stopping", "finish", "finished",
         "try", "trying", "tried", "use", "using", "used", "find", "finding", "found",
         "keep", "keeping", "kept", "leave", "leaving", "left", "meet", "meeting", "met",
+        "depend", "depends", "update", "updated", "updating",
         // Greetings & Conversational
         "hello", "hey", "hi", "bye", "goodbye", "okay", "ok", "yes", "yeah", "yep", "no", "nope",
         "please", "thanks", "thank", "welcome", "sorry", "excuse", "alright", "sure", "fine",
@@ -69,32 +71,55 @@ object EnglishDictionary {
         "what", "when", "where", "why", "who", "whom", "which", "whose", "how",
         "what's", "where's", "who's", "how's",
         // Prepositions & Conjunctions
-        "and", "or", "but", "so", "because", "if", "while", "with", "without", "for", "from", "to",
-        "in", "on", "at", "by", "about", "after", "before", "under", "over", "between", "into", "through",
+        "and", "or", "but", "so", "because", "if", "while", "with", "without", "for", "from", "to", "of", "as",
+        "in", "on", "at", "by", "about", "after", "before", "under", "over", "between", "into", "through", "across",
         // Nouns & Common Words
         "time", "day", "week", "month", "year", "home", "house", "room", "office", "school", "college",
         "university", "friend", "friends", "family", "mother", "father", "brother", "sister", "brotherhood",
         "people", "person", "man", "woman", "boy", "girl", "child", "name", "number", "phone", "mobile",
         "message", "text", "email", "address", "password", "account", "photo", "video", "music", "game",
+        "document", "link", "file", "report", "sentence", "spacing", "touch", "latency", "accuracy",
         "food", "water", "tea", "coffee", "money", "price", "market", "shop", "car", "bus", "train",
         "country", "city", "road", "world", "life", "love", "heart", "mind", "hand", "way", "thing", "things",
-        "problem", "solution", "question", "answer", "news", "update", "version", "keyboard", "english", "bangla",
+        "problem", "solution", "question", "answer", "news", "version", "keyboard", "english", "bangla",
         "happy", "sad", "angry", "tired", "busy", "free", "ready", "safe", "fast", "slow", "easy", "hard",
-        "new", "old", "big", "small", "long", "short", "high", "low", "right", "wrong", "true", "false",
+        "clean", "reliable", "new", "old", "big", "small", "long", "short", "high", "low", "right", "wrong", "true", "false",
         "very", "much", "many", "more", "most", "some", "any", "all", "every", "each", "other", "another",
         "first", "last", "next", "same", "different", "important", "special", "beautiful", "congratulations",
         "birthday", "anniversary", "Eid", "Bangladesh", "Dhaka"
     )
 
+    private val HIGH_FREQUENCY_ORDER: Map<String, Int> = listOf(
+        "the", "to", "and", "of", "a", "in", "is", "that", "it", "for", "you", "with", "on", "are", "was",
+        "be", "this", "have", "from", "not", "we", "he", "she", "as", "they", "but", "can", "will", "do",
+        "what", "so", "by", "or", "an", "my", "your", "their", "them", "there", "then", "here", "when",
+        "where", "who", "how", "all", "if", "about", "me", "please", "good", "send", "time", "ready",
+        "updated", "document", "link", "meeting", "morning", "thanks", "thank", "okay", "sorry"
+    ).withIndex().associate { it.value to it.index }
+
     private val COMMON_WORDS_LOWER_MAP: Map<String, String> = COMMON_WORDS.associateBy { it.lowercase() }
+
+    private val WORDS_BY_FIRST_CHAR: Map<Char, List<Pair<String, String>>> =
+        COMMON_WORDS
+            .distinctBy { it.lowercase() }
+            .map { it.lowercase() to it }
+            .groupBy { it.first[0] }
+            .mapValues { (_, entries) ->
+                entries.sortedWith(
+                    compareBy<Pair<String, String>>(
+                        { HIGH_FREQUENCY_ORDER[it.first] ?: Int.MAX_VALUE },
+                        { it.first.length }
+                    )
+                )
+            }
 
     /**
      * Find English word completions matching [prefix], preserving user capitalization when helpful.
      */
     fun findWordSuggestions(prefix: String, maxResults: Int = 5): List<String> {
-        if (prefix.isBlank()) return emptyList()
+        if (prefix.isBlank() || maxResults <= 0) return emptyList()
         val lower = prefix.lowercase()
-        val results = mutableListOf<String>()
+        val results = LinkedHashSet<String>(maxResults * 2)
 
         // Exact case-insensitive match first (e.g. "im" / "i'm" -> "I'm", "dhaka" -> "Dhaka")
         if (lower == "im" || lower == "i'm") results.add("I'm")
@@ -106,18 +131,16 @@ object EnglishDictionary {
         if (exact != null) {
             results.add(applyPrefixCase(prefix, exact))
         }
+        if (results.size >= maxResults) return results.take(maxResults)
 
-        // Prefix matches sorted by length (shorter common completions first)
-        val prefixMatches = COMMON_WORDS
-            .filter { it.lowercase().startsWith(lower) && it.lowercase() != lower }
-            .sortedBy { it.length }
-
-        for (match in prefixMatches) {
-            val cased = applyPrefixCase(prefix, match)
-            if (!results.contains(cased)) {
-                results.add(cased)
+        val bucket = WORDS_BY_FIRST_CHAR[lower[0]]
+        if (bucket != null) {
+            for ((wordLower, wordCased) in bucket) {
+                if (wordLower.length > lower.length && wordLower.startsWith(lower)) {
+                    results.add(applyPrefixCase(prefix, wordCased))
+                    if (results.size >= maxResults) break
+                }
             }
-            if (results.size >= maxResults) break
         }
 
         return results.take(maxResults)

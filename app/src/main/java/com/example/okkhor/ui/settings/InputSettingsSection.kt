@@ -37,8 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.R
+import com.example.okkhor.data.model.ErgonomicsPreset
 import com.example.okkhor.data.model.InputMode
 import com.example.okkhor.data.model.KeyboardSettings
+import kotlin.math.abs
 
 @Composable
 fun InputSettingsSection(
@@ -177,6 +179,19 @@ fun InputSettingsSection(
                     tag = "switch_autocorrect",
                     onCheckedChange = { checked ->
                         onUpdateSettings { it.copy(autoCorrect = checked) }
+                    }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // Next-word prediction toggle (independent from suggestions & autocorrect)
+                SettingToggleItem(
+                    title = stringResource(R.string.pref_next_word_prediction),
+                    description = stringResource(R.string.pref_next_word_prediction_desc),
+                    checked = settings.nextWordPredictionEnabled,
+                    tag = "switch_next_word_prediction",
+                    onCheckedChange = { checked ->
+                        onUpdateSettings { it.copy(nextWordPredictionEnabled = checked) }
                     }
                 )
 
@@ -521,6 +536,82 @@ fun InputSettingsSection(
                         onUpdateSettings { it.copy(oneHandedMode = com.example.okkhor.data.model.OneHandedMode.LEFT) }
                     }
                 )
+            }
+        }
+
+        // Typing Ergonomics & Key Spacing Calibration Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.pref_ergonomics_title),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.pref_ergonomics_desc),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                ErgonomicsPreset.entries.forEach { preset ->
+                    val selected = settings.keyboardHeightPercent == preset.heightPercent &&
+                        abs(settings.keySpacingDpOverride - preset.keySpacingDp) < 0.25f
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            onUpdateSettings {
+                                it.copy(
+                                    keyboardHeightPercent = preset.heightPercent,
+                                    keySpacingDpOverride = preset.keySpacingDp
+                                )
+                            }
+                        },
+                        label = {
+                            Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                Text(preset.label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(preset.description, fontSize = 11.sp)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ergo_preset_${preset.id}")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Inter-Key Spacing Calibration (${String.format(java.util.Locale.US, "%.1f", settings.keySpacingDpOverride)} dp)",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(3.5f to "35", 4.5f to "45", 5.5f to "55").forEach { (spacingDp, tagSuffix) ->
+                        FilterChip(
+                            selected = abs(settings.keySpacingDpOverride - spacingDp) < 0.2f,
+                            onClick = {
+                                onUpdateSettings { it.copy(keySpacingDpOverride = spacingDp) }
+                            },
+                            label = { Text("${spacingDp} dp") },
+                            modifier = Modifier.testTag("key_spacing_$tagSuffix")
+                        )
+                    }
+                }
             }
         }
 

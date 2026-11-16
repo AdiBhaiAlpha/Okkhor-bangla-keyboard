@@ -24,12 +24,26 @@ enum class ClipboardRetentionOption(
     }
 }
 
+enum class ErgonomicsPreset(
+    val id: String,
+    val label: String,
+    val description: String,
+    val heightPercent: Int,
+    val keySpacingDp: Float
+) {
+    COMPACT_SPEED("compact_speed", "Compact Speed", "94% height • 3.5dp gap for fast thumb reach", 94, 3.5f),
+    BALANCED("balanced", "Balanced Standard", "100% height • 4.5dp gap for daily 40+ WPM accuracy", 100, 4.5f),
+    SPACIOUS_COMFORT("spacious_comfort", "Spacious Comfort", "110% height • 5.5dp gap to prevent adjacent typos", 110, 5.5f)
+}
+
 data class KeyboardSettings(
     val selectedThemeId: String = KeyboardTheme.OkkhorEmerald.id,
     val defaultInputMode: InputMode = InputMode.BANGLA_PHONETIC,
     val showNumberRow: Boolean = true,
     val showSuggestions: Boolean = true,
     val autoCorrect: Boolean = false,
+    val nextWordPredictionEnabled: Boolean = true,
+    val keySpacingDpOverride: Float = 4.5f,
     val hapticFeedback: Boolean = true,
     val soundFeedback: Boolean = true,
     val keyPopupPreview: Boolean = true,

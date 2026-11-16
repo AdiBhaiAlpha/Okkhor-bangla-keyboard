@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -44,7 +45,9 @@ import com.example.okkhor.ime.OkkhorInputMethodService
 import com.example.okkhor.ui.keyboard.KeyboardContainer
 import com.example.okkhor.ui.keyboard.KeyboardLayouts
 import com.example.okkhor.ui.settings.InputSettingsSection
+import com.example.okkhor.ui.settings.MainSettingsScreen
 import com.example.okkhor.ui.settings.PrivacyAboutSection
+import com.example.okkhor.ui.settings.TypingPerformanceLabSection
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -1279,9 +1282,522 @@ class ExampleRobolectricTest {
         composeTestRule.waitForIdle()
         assertEquals(70, repo.settings.value.hapticIntensityPercent)
     }
+
+    @Test
+    fun `verify Bangla Phonetic am plus Space commits exact word without unwanted expansion and ignores password telemetry`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        com.example.okkhor.benchmark.TypingPerformanceTracker.clearAllMetrics()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        try {
+            val editText = EditText(context)
+            val info = EditorInfo().apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+            }
+            val ic = editText.onCreateInputConnection(info)!!
+            service.setTestBinding(ic, info)
+            service.onStartInputView(info, false)
+            service.switchInputMode(InputMode.BANGLA_PHONETIC)
+
+            service.handleKeyPress("a")
+            service.handleKeyPress("m")
+            // Candidate bar still offers "আমি" while Space commits exact "আম "
+            assertTrue(service.candidates.contains("আমি"))
+            service.handleActionKey(KeyboardLayouts.CODE_SPACE)
+            assertEquals("আম ", editText.text.toString())
+
+            val countBeforePassword = com.example.okkhor.benchmark.TypingPerformanceTracker.liveSummary.value.totalKeystrokes
+
+            // Password field must not increment performance tracker keystrokes
+            editText.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            val passInfo = EditorInfo()
+            val passIc = editText.onCreateInputConnection(passInfo)!!
+            passInfo.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            service.setTestBinding(passIc, passInfo)
+            service.onStartInputView(passInfo, false)
+            service.handleKeyPress("p")
+            assertEquals(
+                countBeforePassword,
+                com.example.okkhor.benchmark.TypingPerformanceTracker.liveSummary.value.totalKeystrokes
+            )
+            val json = com.example.okkhor.benchmark.TypingPerformanceTracker.liveSummary.value.toJson().toString()
+            assertFalse(json.contains("আম"))
+            assertFalse(json.contains("\"am\""))
+            assertFalse(json.contains("SecretPw"))
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify TypingPerformanceLabSection renders telemetry, micro-benchmark, and unprefilled comparison protocol`() {
+        var closed = false
+        composeTestRule.setContent {
+            val scroll = rememberScrollState()
+            Box(modifier = Modifier.fillMaxWidth().verticalScroll(scroll)) {
+                TypingPerformanceLabSection(
+                    settings = KeyboardSettings(),
+                    activeTheme = KeyboardTheme.OkkhorEmerald,
+                    onClose = { closed = true }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("perf_lab_privacy_card").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("perf_lab_live_telemetry_card").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("perf_lab_prompt_runner_card").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_run_micro_bench").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("micro_bench_output").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("perf_lab_comparison_protocol_card").performScrollTo().assertIsDisplayed()
+        // Gboard / Ridmik slots start blank (never fabricated)
+        composeTestRule.onNodeWithTag("ab_gboard_wpm_0").performScrollTo().assertTextContains("")
+        composeTestRule.onNodeWithTag("ab_ridmik_wpm_0").performScrollTo().assertTextContains("")
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify InputSettingsSection toggles Next-Word Prediction and Ergonomics presets`() {
+        var current by mutableStateOf(KeyboardSettings())
+        composeTestRule.setContent {
+            val scroll = rememberScrollState()
+            Box(modifier = Modifier.fillMaxWidth().verticalScroll(scroll)) {
+                InputSettingsSection(
+                    settings = current,
+                    onUpdateSettings = { updater -> current = updater(current) }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("switch_next_word_prediction").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        assertFalse(current.nextWordPredictionEnabled)
+
+        composeTestRule.onNodeWithTag("ergo_preset_compact_speed").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(94, current.keyboardHeightPercent)
+        assertEquals(3.5f, current.keySpacingDpOverride, 0.01f)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify touch hitbox accuracy at bottom edges, inter-key gaps, staggered Row 2, and bottom row`() {
+        val typedKeys = mutableListOf<String>()
+        val actions = mutableListOf<Int>()
+        var modeSwitches = 0
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(showNumberRow = false),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                onKeyPress = { typedKeys.add(it) },
+                onActionKey = { actions.add(it) },
+                onCandidateClick = {},
+                onModeSwitch = { modeSwitches++ },
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {}
+            )
+        }
+
+        composeTestRule.waitForIdle()
+
+        // ~1mm offset at xxhdpi (~3px/dp): 6dp below visible bottom of key (~18px)
+        val density = composeTestRule.density.density
+        val oneMmDownPx = 6f * density
+
+        // 1. Bottom edge of Row 1 key 'e' (+1mm below visual rect) still hits 'e'
+        composeTestRule.onNodeWithTag("key_e").performTouchInput {
+            val pt = Offset(centerX, bottom + 2f)
+            down(pt)
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(listOf("e"), typedKeys)
+
+        // 2. Staggered Row 2 outer key 'a' and middle key 'g' just inside & right at bottom edge
+        composeTestRule.onNodeWithTag("key_a").performTouchInput {
+            down(Offset(left + 1f, bottom - 1f))
+            up()
+        }
+        composeTestRule.onNodeWithTag("key_g").performTouchInput {
+            down(Offset(centerX, bottom + 2f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(listOf("e", "a", "g"), typedKeys)
+
+        // 3. Inter-key gap between 't' and 'y': left-biased gap tap hits 't', right-biased gap tap hits 'y'
+        composeTestRule.onNodeWithTag("key_t").performTouchInput {
+            down(Offset(right + 1f, centerY))
+            up()
+        }
+        composeTestRule.onNodeWithTag("key_y").performTouchInput {
+            down(Offset(left - 1f, centerY))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(listOf("e", "a", "g", "t", "y"), typedKeys)
+
+        // 4. Bottom Row: Spacebar outer-left edge & ~0.7-1mm below bottom edge still triggers CODE_SPACE (not Emoji/Lang)
+        composeTestRule.onNodeWithTag("spacebar").performTouchInput {
+            down(Offset(left + 3f, bottom + oneMmDownPx * 0.7f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertTrue(actions.contains(KeyboardLayouts.CODE_SPACE))
+
+        // 5. Bottom Row: Period '.' near bottom edge triggers '.'
+        composeTestRule.onNodeWithTag("key_.").performTouchInput {
+            down(Offset(centerX, bottom + oneMmDownPx * 0.6f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertTrue(typedKeys.contains("."))
+
+        // 6. Bottom Row: Enter key near bottom bezel triggers CODE_ENTER
+        composeTestRule.onNodeWithTag("btn_enter").performTouchInput {
+            down(Offset(centerX, bottom + oneMmDownPx * 0.7f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertTrue(actions.contains(KeyboardLayouts.CODE_ENTER))
+
+        // 7. Bottom Row: Language button lower edge switches mode reliably
+        composeTestRule.onNodeWithTag("btn_language").performTouchInput {
+            down(Offset(centerX, bottom + oneMmDownPx * 0.6f))
+            up()
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(1, modeSwitches)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify Performance Lab exposes all 6 standardized tests and 5 10 15m Long-Session Comfort Mode`() {
+        composeTestRule.setContent {
+            val scroll = rememberScrollState()
+            Box(modifier = Modifier.fillMaxWidth().verticalScroll(scroll)) {
+                TypingPerformanceLabSection(
+                    settings = KeyboardSettings(),
+                    activeTheme = KeyboardTheme.OkkhorEmerald,
+                    onClose = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        // All 6 standardized prompts present
+        composeTestRule.onNodeWithTag("bench_prompt_en_short").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bench_prompt_en_long").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bench_prompt_bn_avro_short").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bench_prompt_bn_avro_long").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bench_prompt_bn_probhat_short").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bench_prompt_mixed_long").performScrollTo().assertIsDisplayed()
+
+        // Long-Session Comfort Mode card & 5 / 10 / 15 min controls present
+        composeTestRule.onNodeWithTag("perf_lab_long_session_card").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("long_session_dur_5").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("long_session_dur_10").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("long_session_dur_15").performScrollTo().assertIsDisplayed()
+
+        // 6th comparison scenario slot present & blank until measured
+        composeTestRule.onNodeWithTag("ab_gboard_wpm_5").performScrollTo().assertTextContains("")
+        composeTestRule.onNodeWithTag("ab_ridmik_wpm_5").performScrollTo().assertTextContains("")
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify new brand icon replaces old badge in app UI and top bar hides mode label pill`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val repository = KeyboardPreferencesRepository.getInstance(context)
+
+        composeTestRule.setContent {
+            MainSettingsScreen(repository = repository)
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("topbar_brand_icon").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("home_brand_icon").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("অ").assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag("nav_tab_more").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("about_brand_icon").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("অ").assertCountEquals(0)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify keyboard top bar omits phonetic probhat eng mode label pill`() {
+        val modes = listOf(
+            InputMode.BANGLA_PHONETIC,
+            InputMode.BANGLA_FIXED,
+            InputMode.ENGLISH
+        )
+        var currentMode by androidx.compose.runtime.mutableStateOf(modes.first())
+
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(defaultInputMode = currentMode),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = currentMode,
+                lastTextMode = currentMode,
+                isShifted = false,
+                candidates = emptyList(),
+                onKeyPress = {},
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = { currentMode = it },
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {}
+            )
+        }
+
+        modes.forEach { mode ->
+            currentMode = mode
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("btn_quick_tools").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("mode_switch_pill").assertDoesNotExist()
+            composeTestRule.onAllNodesWithText("ফোনেটিক").assertCountEquals(0)
+            composeTestRule.onAllNodesWithText("প্রভাত").assertCountEquals(0)
+            composeTestRule.onAllNodesWithText("ENG").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify liquid drop ripple overlay animates on key press and completes cleanly`() {
+        val typed = mutableListOf<String>()
+        composeTestRule.setContent {
+            KeyboardContainer(
+                settings = KeyboardSettings(defaultInputMode = InputMode.ENGLISH),
+                theme = KeyboardTheme.OkkhorEmerald,
+                currentMode = InputMode.ENGLISH,
+                lastTextMode = InputMode.ENGLISH,
+                isShifted = false,
+                candidates = emptyList(),
+                onKeyPress = { typed.add(it) },
+                onActionKey = {},
+                onCandidateClick = {},
+                onModeSwitch = {},
+                onCursorMove = {},
+                onOpenSettings = {},
+                onOpenClipboard = {}
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.mainClock.autoAdvance = false
+        try {
+            composeTestRule.onNodeWithTag("key_a").performTouchInput {
+                down(center)
+            }
+            composeTestRule.mainClock.advanceTimeBy(48L)
+            composeTestRule.onNodeWithTag("keyboard_liquid_drop_overlay").assertIsDisplayed()
+
+            composeTestRule.onNodeWithTag("key_a").performTouchInput {
+                up()
+            }
+            composeTestRule.mainClock.advanceTimeBy(600L)
+            composeTestRule.onNodeWithTag("keyboard_liquid_drop_overlay").assertDoesNotExist()
+            assertEquals(listOf("a"), typed)
+        } finally {
+            composeTestRule.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun `verify single and double Backspace tap immediately deletes composing and committed text across English and Bangla`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        try {
+            val editText = EditText(context)
+            val info = EditorInfo().apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+            }
+            val ic = editText.onCreateInputConnection(info)!!
+            service.setTestBinding(ic, info)
+            service.onStartInputView(info, false)
+
+            // 1. English 1-char active composition -> single Backspace MUST delete immediately (no 2nd tap needed)
+            service.switchInputMode(InputMode.ENGLISH)
+            service.handleKeyPress("a")
+            assertEquals("a", editText.text.toString())
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("", editText.text.toString())
+
+            // 2. English multi-char active composition -> double Backspace deletes 2 chars cleanly
+            service.handleKeyPress("h")
+            service.handleKeyPress("i")
+            assertEquals("hi", editText.text.toString())
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("h", editText.text.toString())
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("", editText.text.toString())
+
+            // 3. Bangla Phonetic 1-char active composition -> single Backspace deletes immediately
+            service.switchInputMode(InputMode.BANGLA_PHONETIC)
+            service.handleKeyPress("k")
+            assertEquals("ক", editText.text.toString())
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("", editText.text.toString())
+
+            // 4. Simulate stale hasSelectionState when selection was cleared -> single Backspace still deletes 1 char
+            service.switchInputMode(InputMode.ENGLISH)
+            editText.setText("cat")
+            editText.setSelection(3)
+            val staleInfo = EditorInfo().apply {
+                initialSelStart = 1
+                initialSelEnd = 3
+            }
+            val staleIc = editText.onCreateInputConnection(staleInfo)!!
+            service.setTestBinding(staleIc, staleInfo)
+            service.onStartInputView(staleInfo, false)
+            service.hasSelectionState = true // stale flag while EditText actually has collapsed cursor at 3
+            service.handleActionKey(KeyboardLayouts.CODE_DELETE)
+            assertEquals("ca", editText.text.toString())
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+    fun `verify single double hold Backspace, rapid mixed typing, multi-touch, and light dark themes in KeyboardContainer`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildService(OkkhorInputMethodService::class.java)
+        val service = controller.create().get()
+        try {
+            val editText = EditText(context)
+            val info = EditorInfo().apply {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+            }
+            val ic = editText.onCreateInputConnection(info)!!
+            service.setTestBinding(ic, info)
+            service.onStartInputView(info, false)
+            service.switchInputMode(InputMode.ENGLISH)
+
+            var activeTheme by mutableStateOf(KeyboardTheme.OkkhorEmerald)
+            var activeMode by mutableStateOf(InputMode.ENGLISH)
+
+            composeTestRule.setContent {
+                KeyboardContainer(
+                    settings = KeyboardSettings(defaultInputMode = activeMode, showNumberRow = false),
+                    theme = activeTheme,
+                    currentMode = activeMode,
+                    lastTextMode = InputMode.ENGLISH,
+                    isShifted = false,
+                    candidates = emptyList(),
+                    onKeyPress = { service.handleKeyPress(it) },
+                    onActionKey = { service.handleActionKey(it) },
+                    onCandidateClick = {},
+                    onModeSwitch = { activeMode = it },
+                    onCursorMove = {},
+                    onOpenSettings = {},
+                    onOpenClipboard = {},
+                    onDeleteWordSwipe = { service.deleteWordBeforeCursor() }
+                )
+            }
+            composeTestRule.waitForIdle()
+
+            // A. Rapid letter typing ("hello") + immediate single Backspace tap -> "hell"
+            for (ch in listOf("h", "e", "l", "l", "o")) {
+                composeTestRule.onNodeWithTag("key_$ch").performTouchInput {
+                    down(center)
+                    up()
+                }
+            }
+            composeTestRule.waitForIdle()
+            assertEquals("hello", editText.text.toString())
+
+            composeTestRule.onNodeWithTag("btn_backspace").performTouchInput {
+                down(center)
+                up()
+            }
+            composeTestRule.waitForIdle()
+            assertEquals("hell", editText.text.toString())
+
+            // B. Double Backspace tap -> deletes 2 more -> "he"
+            repeat(2) {
+                composeTestRule.onNodeWithTag("btn_backspace").performTouchInput {
+                    down(center)
+                    up()
+                }
+            }
+            composeTestRule.waitForIdle()
+            assertEquals("he", editText.text.toString())
+
+            // C. Rapid mixed-key typing: "y " + Backspace -> "hey"
+            composeTestRule.onNodeWithTag("key_y").performTouchInput { down(center); up() }
+            composeTestRule.onNodeWithTag("spacebar").performTouchInput { down(center); up() }
+            composeTestRule.onNodeWithTag("btn_backspace").performTouchInput { down(center); up() }
+            composeTestRule.waitForIdle()
+            assertEquals("hey", editText.text.toString())
+
+            // D. Hold Backspace repeats deletion and stops cleanly on release
+            composeTestRule.mainClock.autoAdvance = false
+            try {
+                composeTestRule.onNodeWithTag("btn_backspace").performTouchInput {
+                    down(center)
+                }
+                composeTestRule.mainClock.advanceTimeBy(550L) // initial tap + repeat ticks
+                composeTestRule.onNodeWithTag("btn_backspace").performTouchInput {
+                    up()
+                }
+                composeTestRule.mainClock.advanceTimeBy(300L) // no more deletions after UP
+            } finally {
+                composeTestRule.mainClock.autoAdvance = true
+            }
+            composeTestRule.waitForIdle()
+            assertEquals("", editText.text.toString())
+
+            // E. Multi-touch rollover typing ('a' held while 's' tapped) -> both register cleanly
+            composeTestRule.onNodeWithTag("key_a").performTouchInput {
+                down(pointerId = 0, position = center)
+            }
+            composeTestRule.onNodeWithTag("key_s").performTouchInput {
+                down(pointerId = 1, position = center)
+                up(pointerId = 1)
+            }
+            composeTestRule.onNodeWithTag("key_a").performTouchInput {
+                up(pointerId = 0)
+            }
+            composeTestRule.waitForIdle()
+            assertEquals("sa", editText.text.toString())
+
+            // F. Light & Dark theme switching renders cleanly and animates liquid drop without blocking touch
+            activeTheme = KeyboardTheme.PaperWhite
+            composeTestRule.waitForIdle()
+            composeTestRule.mainClock.autoAdvance = false
+            try {
+                composeTestRule.onNodeWithTag("btn_backspace").performTouchInput { down(center) }
+                composeTestRule.waitForIdle()
+                composeTestRule.mainClock.advanceTimeBy(48L)
+                composeTestRule.onNodeWithTag("keyboard_liquid_drop_overlay").assertIsDisplayed()
+                composeTestRule.onNodeWithTag("btn_backspace").performTouchInput { up() }
+                composeTestRule.mainClock.advanceTimeBy(450L)
+                composeTestRule.onNodeWithTag("keyboard_liquid_drop_overlay").assertDoesNotExist()
+            } finally {
+                composeTestRule.mainClock.autoAdvance = true
+            }
+            composeTestRule.waitForIdle()
+            assertEquals("s", editText.text.toString())
+
+            // Dark theme tap
+            activeTheme = KeyboardTheme.OkkhorEmerald
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("btn_backspace").performTouchInput { down(center); up() }
+            composeTestRule.waitForIdle()
+            assertEquals("", editText.text.toString())
+        } finally {
+            controller.destroy()
+        }
+    }
 }
-
-
-
-
-

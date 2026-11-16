@@ -96,6 +96,10 @@ class HapticFeedbackController(context: Context) {
             appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
     }
+    private val hasHardwareVibrator: Boolean by lazy {
+        vibrator?.hasVibrator() == true
+    }
+    private val effectCache = HashMap<Int, VibrationEffect>(16)
 
     fun trigger(view: View, settings: KeyboardSettings, event: HapticEventType) {
         if (!settings.hapticFeedback) return
@@ -109,19 +113,23 @@ class HapticFeedbackController(context: Context) {
         if (!enabled) return
 
         val intensity = settings.hapticIntensityPercent.coerceIn(10, 100)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && hasHardwareVibrator) {
             val vib = vibrator
-            if (vib != null && vib.hasVibrator()) {
-                val baseDuration = when (event) {
-                    HapticEventType.KEYPRESS -> 10L
-                    HapticEventType.LONG_PRESS -> 20L
-                    HapticEventType.GESTURE_COMPLETE -> 16L
-                    HapticEventType.DOCK_OPEN -> 18L
-                    HapticEventType.LANGUAGE_SWITCH -> 15L
+            if (vib != null) {
+                val cacheKey = (event.ordinal shl 8) or intensity
+                val effect = effectCache.getOrPut(cacheKey) {
+                    val baseDuration = when (event) {
+                        HapticEventType.KEYPRESS -> 10L
+                        HapticEventType.LONG_PRESS -> 20L
+                        HapticEventType.GESTURE_COMPLETE -> 16L
+                        HapticEventType.DOCK_OPEN -> 18L
+                        HapticEventType.LANGUAGE_SWITCH -> 15L
+                    }
+                    val amplitude = ((intensity / 100f) * 200f).toInt().coerceIn(15, 255)
+                    VibrationEffect.createOneShot(baseDuration, amplitude)
                 }
-                val amplitude = ((intensity / 100f) * 200f).toInt().coerceIn(15, 255)
                 val emitted = runCatching {
-                    vib.vibrate(VibrationEffect.createOneShot(baseDuration, amplitude))
+                    vib.vibrate(effect)
                     true
                 }.getOrDefault(false)
                 if (emitted) return

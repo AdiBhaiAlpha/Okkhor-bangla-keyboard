@@ -4,42 +4,40 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Smart Persistent Memory for Auto-Correction, User Word Selection Learning, and Next-Word Predictions.
  *
- * Capabilities:
- * 1. User Correction Learning: Remembers which candidate word the user selects for any typed input (e.g. "kalke" -> "কালকে").
- * 2. Bigram Word Sequencing: Remembers which word the user types after another word (e.g. "আমি" -> "যাব", "আজকে" -> "দেখা").
- * 3. User Lexicon: Remembers custom Bengali words/names typed by the user.
- * 4. Frequency-based ranking so repeatedly chosen words automatically get promoted to the #1 prediction spot.
+ * Optimized for zero main-thread lock contention: reads hit lock-free ConcurrentHashMaps while writes
+ * mark dirty and coalesce JSON serialization into debounced background IO flushes.
  */
 class SmartWordMemory private constructor(context: Context) {
 
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // In-memory caches for zero-latency keystroke suggestions
-    // Map: rawInput (lowercase) -> Map of (chosenWord to frequency)
-    private val correctionsMap = mutableMapOf<String, MutableMap<String, Int>>()
+    // Lock-free in-memory caches for zero-latency keystroke suggestions
+    private val correctionsMap = ConcurrentHashMap<String, ConcurrentHashMap<String, Int>>()
+    private val bigramMap = ConcurrentHashMap<String, ConcurrentHashMap<String, Int>>()
+    private val userLexicon = ConcurrentHashMap<String, Int>()
 
-    // Map: previousWord -> Map of (nextWord to frequency)
-    private val bigramMap = mutableMapOf<String, MutableMap<String, Int>>()
-
-    // User's custom lexicon: word -> frequency
-    private val userLexicon = mutableMapOf<String, Int>()
+    @Volatile
+    private var isDirty = false
+    private val persistScheduleLock = Any()
+    private var pendingPersistJob: Job? = null
 
     init {
         loadMemory()
     }
 
-    @Synchronized
     private fun loadMemory() {
         try {
-            // 1. Load corrections
             val correctionsJson = prefs.getString(KEY_CORRECTIONS, null)
             if (!correctionsJson.isNullOrEmpty()) {
                 val json = JSONObject(correctionsJson)
@@ -47,7 +45,7 @@ class SmartWordMemory private constructor(context: Context) {
                 while (keys.hasNext()) {
                     val raw = keys.next()
                     val wordObj = json.getJSONObject(raw)
-                    val freqMap = mutableMapOf<String, Int>()
+                    val freqMap = ConcurrentHashMap<String, Int>()
                     val wordKeys = wordObj.keys()
                     while (wordKeys.hasNext()) {
                         val word = wordKeys.next()
@@ -57,7 +55,6 @@ class SmartWordMemory private constructor(context: Context) {
                 }
             }
 
-            // 2. Load bigrams
             val bigramJson = prefs.getString(KEY_BIGRAMS, null)
             if (!bigramJson.isNullOrEmpty()) {
                 val json = JSONObject(bigramJson)
@@ -65,7 +62,7 @@ class SmartWordMemory private constructor(context: Context) {
                 while (keys.hasNext()) {
                     val prev = keys.next()
                     val nextObj = json.getJSONObject(prev)
-                    val freqMap = mutableMapOf<String, Int>()
+                    val freqMap = ConcurrentHashMap<String, Int>()
                     val nextKeys = nextObj.keys()
                     while (nextKeys.hasNext()) {
                         val next = nextKeys.next()
@@ -75,7 +72,6 @@ class SmartWordMemory private constructor(context: Context) {
                 }
             }
 
-            // 3. Load user lexicon
             val lexiconJson = prefs.getString(KEY_LEXICON, null)
             if (!lexiconJson.isNullOrEmpty()) {
                 val json = JSONObject(lexiconJson)
@@ -85,7 +81,7 @@ class SmartWordMemory private constructor(context: Context) {
                     userLexicon[word] = json.optInt(word, 1)
                 }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Graceful fallback on corrupt memory
         }
     }
@@ -98,16 +94,11 @@ class SmartWordMemory private constructor(context: Context) {
         val cleanWord = chosenWord.trim()
         if (cleanRaw.isEmpty() || cleanWord.isEmpty()) return
 
-        synchronized(this) {
-            val freqMap = correctionsMap.getOrPut(cleanRaw) { mutableMapOf() }
-            val currentCount = freqMap[cleanWord] ?: 0
-            freqMap[cleanWord] = currentCount + 1
-
-            // Keep user lexicon updated
-            val wordCount = userLexicon[cleanWord] ?: 0
-            userLexicon[cleanWord] = wordCount + 1
-        }
-        persistAsync()
+        val freqMap = correctionsMap.getOrPut(cleanRaw) { ConcurrentHashMap() }
+        freqMap.merge(cleanWord, 1) { old, inc -> old + inc }
+        userLexicon.merge(cleanWord, 1) { old, inc -> old + inc }
+        isDirty = true
+        schedulePersist()
     }
 
     /**
@@ -118,12 +109,10 @@ class SmartWordMemory private constructor(context: Context) {
         val next = nextWord.trim()
         if (prev.isEmpty() || next.isEmpty() || prev == next) return
 
-        synchronized(this) {
-            val nextMap = bigramMap.getOrPut(prev) { mutableMapOf() }
-            val currentCount = nextMap[next] ?: 0
-            nextMap[next] = currentCount + 1
-        }
-        persistAsync()
+        val nextMap = bigramMap.getOrPut(prev) { ConcurrentHashMap() }
+        nextMap.merge(next, 1) { old, inc -> old + inc }
+        isDirty = true
+        schedulePersist()
     }
 
     /**
@@ -133,97 +122,141 @@ class SmartWordMemory private constructor(context: Context) {
         val clean = word.trim()
         if (clean.length < 2) return
 
-        synchronized(this) {
-            val current = userLexicon[clean] ?: 0
-            userLexicon[clean] = current + 1
-        }
-        persistAsync()
+        userLexicon.merge(clean, 1) { old, inc -> old + inc }
+        isDirty = true
+        schedulePersist()
     }
 
     /**
      * Retrieve learned corrections for [rawInput] ranked by frequency.
      */
-    @Synchronized
     fun getLearnedCorrections(rawInput: String): List<String> {
         val clean = rawInput.trim().lowercase()
         val freqMap = correctionsMap[clean] ?: return emptyList()
+        if (freqMap.size == 1) return freqMap.keys.toList()
         return freqMap.entries
             .sortedByDescending { it.value }
             .map { it.key }
+    }
+
+    /**
+     * Highest-frequency learned correction along with its repetition count for conservative auto-replace checks.
+     */
+    fun getTopLearnedCorrectionWithCount(rawInput: String): Pair<String, Int>? {
+        val clean = rawInput.trim().lowercase()
+        val freqMap = correctionsMap[clean] ?: return null
+        var bestKey: String? = null
+        var bestCount = 0
+        for ((k, v) in freqMap) {
+            if (v > bestCount) {
+                bestCount = v
+                bestKey = k
+            }
+        }
+        return bestKey?.let { it to bestCount }
     }
 
     /**
      * Retrieve user's learned next-words following [previousWord] ranked by frequency.
      */
-    @Synchronized
     fun getLearnedNextWords(previousWord: String, maxResults: Int = 4): List<String> {
         val clean = previousWord.trim()
         val freqMap = bigramMap[clean] ?: return emptyList()
         return freqMap.entries
             .sortedByDescending { it.value }
-            .map { it.key }
             .take(maxResults)
+            .map { it.key }
     }
 
     /**
      * Search user's personal lexicon for words matching [prefix].
      */
-    @Synchronized
     fun searchUserLexicon(prefix: String, maxResults: Int = 3): List<String> {
         val clean = prefix.trim()
         if (clean.isEmpty()) return emptyList()
-        return userLexicon.entries
-            .filter { it.key.startsWith(clean, ignoreCase = true) && it.key != clean }
+        val matches = mutableListOf<Map.Entry<String, Int>>()
+        for (entry in userLexicon.entries) {
+            val k = entry.key
+            if (k.length > clean.length && k.startsWith(clean, ignoreCase = true)) {
+                matches.add(entry)
+            }
+        }
+        if (matches.isEmpty()) return emptyList()
+        return matches
             .sortedByDescending { it.value }
-            .map { it.key }
             .take(maxResults)
+            .map { it.key }
+    }
+
+    /**
+     * Immediately flush any pending in-memory updates to SharedPreferences on a background thread.
+     */
+    fun flushPendingSaves() {
+        if (!isDirty) return
+        synchronized(persistScheduleLock) {
+            pendingPersistJob?.cancel()
+            pendingPersistJob = scope.launch {
+                writeSnapshotToPrefs()
+            }
+        }
     }
 
     /**
      * Clear all learned memory (e.g. from Settings).
      */
-    @Synchronized
     fun clearMemory() {
+        synchronized(persistScheduleLock) {
+            pendingPersistJob?.cancel()
+        }
         correctionsMap.clear()
         bigramMap.clear()
         userLexicon.clear()
+        isDirty = false
         prefs.edit().clear().apply()
     }
 
-    private fun persistAsync() {
-        scope.launch {
-            try {
-                val correctionsJson = JSONObject()
-                val bigramJson = JSONObject()
-                val lexiconJson = JSONObject()
-
-                synchronized(this@SmartWordMemory) {
-                    correctionsMap.forEach { (raw, map) ->
-                        val obj = JSONObject()
-                        map.forEach { (w, c) -> obj.put(w, c) }
-                        correctionsJson.put(raw, obj)
-                    }
-
-                    bigramMap.forEach { (prev, map) ->
-                        val obj = JSONObject()
-                        map.forEach { (next, c) -> obj.put(next, c) }
-                        bigramJson.put(prev, obj)
-                    }
-
-                    userLexicon.forEach { (w, c) ->
-                        lexiconJson.put(w, c)
-                    }
-                }
-
-                prefs.edit().apply {
-                    putString(KEY_CORRECTIONS, correctionsJson.toString())
-                    putString(KEY_BIGRAMS, bigramJson.toString())
-                    putString(KEY_LEXICON, lexiconJson.toString())
-                    apply()
-                }
-            } catch (e: Exception) {
-                // Ignore background persistence errors
+    private fun schedulePersist() {
+        synchronized(persistScheduleLock) {
+            pendingPersistJob?.cancel()
+            pendingPersistJob = scope.launch {
+                delay(1500L)
+                writeSnapshotToPrefs()
             }
+        }
+    }
+
+    private fun writeSnapshotToPrefs() {
+        if (!isDirty) return
+        try {
+            isDirty = false
+            val correctionsJson = JSONObject()
+            val bigramJson = JSONObject()
+            val lexiconJson = JSONObject()
+
+            for ((raw, map) in correctionsMap) {
+                val obj = JSONObject()
+                for ((w, c) in map) obj.put(w, c)
+                correctionsJson.put(raw, obj)
+            }
+
+            for ((prev, map) in bigramMap) {
+                val obj = JSONObject()
+                for ((next, c) in map) obj.put(next, c)
+                bigramJson.put(prev, obj)
+            }
+
+            for ((w, c) in userLexicon) {
+                lexiconJson.put(w, c)
+            }
+
+            prefs.edit().apply {
+                putString(KEY_CORRECTIONS, correctionsJson.toString())
+                putString(KEY_BIGRAMS, bigramJson.toString())
+                putString(KEY_LEXICON, lexiconJson.toString())
+                apply()
+            }
+        } catch (_: Exception) {
+            // Ignore background persistence errors
         }
     }
 

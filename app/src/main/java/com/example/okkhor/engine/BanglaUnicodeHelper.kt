@@ -31,6 +31,26 @@ object BanglaUnicodeHelper {
 
     fun isBanglaText(text: CharSequence): Boolean = text.any { isBanglaChar(it) }
 
+    /**
+     * Counts true Unicode grapheme clusters (extended grapheme boundaries) using BreakIterator
+     * so Bangla conjuncts, vowel signs, and ZWJ emojis are measured accurately.
+     */
+    fun countGraphemeClusters(text: CharSequence): Int {
+        if (text.isEmpty()) return 0
+        val iterator = java.text.BreakIterator.getCharacterInstance()
+        iterator.setText(text.toString())
+        var count = 0
+        var boundary = iterator.first()
+        while (boundary != java.text.BreakIterator.DONE) {
+            val next = iterator.next()
+            if (next != java.text.BreakIterator.DONE) {
+                count++
+            }
+            boundary = next
+        }
+        return count
+    }
+
     private const val ZWJ = '\u200D'
     private const val KEYCAP_COMBINING = '\u20E3'
 

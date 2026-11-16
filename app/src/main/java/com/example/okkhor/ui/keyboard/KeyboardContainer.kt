@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.AudioManager
 import android.view.HapticFeedbackConstants
 import android.view.SoundEffectConstants
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -12,9 +11,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +20,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,12 +39,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -100,10 +96,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -150,6 +149,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.example.okkhor.benchmark.TypingPerformanceTracker
 import com.example.okkhor.data.model.ClipboardItem
 import com.example.okkhor.data.model.ClipboardRetentionOption
 import com.example.okkhor.data.model.InputMode
@@ -283,7 +283,15 @@ fun KeyboardContainer(
     val isFloating = settings.floatingKeyboardMode && !isOneHanded
     val scaleMultiplier = if (isOneHanded) 0.90f else 1.0f
     val elevation = theme.keyElevationDp.dp
-    val spacing = if (isOneHanded) 2.5.dp else theme.keySpacingDp.dp
+    val spacing = if (isOneHanded) 2.5.dp else settings.keySpacingDpOverride.coerceIn(2.0f, 8.0f).dp
+    var pendingRenderStartNs by remember { mutableLongStateOf(0L) }
+    SideEffect {
+        if (pendingRenderStartNs > 0L) {
+            val frameMs = (System.nanoTime() - pendingRenderStartNs) / 1_000_000.0
+            pendingRenderStartNs = 0L
+            TypingPerformanceTracker.recordFrameDurationMs(frameMs)
+        }
+    }
 
     // Sub-panel states
     var showToolsDrawer by remember { mutableStateOf(false) }
@@ -397,18 +405,26 @@ fun KeyboardContainer(
     }
 
     fun playFeedback() {
+        pendingRenderStartNs = System.nanoTime()
         hapticController.trigger(view, settings, HapticEventType.KEYPRESS)
         if (settings.soundFeedback) {
-            audioManager?.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.7f)
-            view.playSoundEffect(SoundEffectConstants.CLICK)
+            if (audioManager != null) {
+                audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.7f)
+            } else {
+                view.playSoundEffect(SoundEffectConstants.CLICK)
+            }
         }
     }
 
     fun playSpecialFeedback() {
+        pendingRenderStartNs = System.nanoTime()
         hapticController.trigger(view, settings, HapticEventType.GESTURE_COMPLETE)
         if (settings.soundFeedback) {
-            audioManager?.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.85f)
-            view.playSoundEffect(SoundEffectConstants.CLICK)
+            if (audioManager != null) {
+                audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.85f)
+            } else {
+                view.playSoundEffect(SoundEffectConstants.CLICK)
+            }
         }
     }
 
@@ -423,12 +439,10 @@ fun KeyboardContainer(
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(bottom = 2.dp)
         ) {
             // --- 1. Candidate Suggestion Strip & Quick Toolbar ---
             CandidateToolbar(
                 theme = theme,
-                currentMode = currentMode,
                 candidates = candidates,
                 clipboardSmartHint = clipboardSmartHint,
                 canUndo = canUndo,
@@ -480,16 +494,6 @@ fun KeyboardContainer(
                     showResizeBar = false
                     gestureManager.cancelAll()
                     isResizeMode = !isResizeMode
-                },
-                onModeSwitch = {
-                    playFeedback()
-                    gestureManager.cancelAll()
-                    val next = if (!currentMode.isTextMode) {
-                        rememberedTextMode
-                    } else {
-                        nextLanguageMode()
-                    }
-                    onModeSwitch(next)
                 },
                 onOpenTools = {
                     playFeedback()
@@ -743,6 +747,7 @@ fun KeyboardContainer(
                         spacing = spacing,
                         enterActionLabel = enterActionLabel,
                         isSpaceCursorHoldActive = isSpaceCursorHoldActive,
+                        isOverlayBlockingTouch = gestureManager.isBackdropBlurActive || isResizeMode,
                         playFeedback = { playFeedback() },
                         playSpecialFeedback = { playSpecialFeedback() },
                         emojiRepository = resolvedEmojiRepository,
@@ -1615,7 +1620,6 @@ fun KeyboardContainer(
 @Composable
 private fun CandidateToolbar(
     theme: KeyboardTheme,
-    currentMode: InputMode,
     candidates: List<String>,
     clipboardSmartHint: ClipboardSmartHint? = null,
     canUndo: Boolean,
@@ -1635,7 +1639,6 @@ private fun CandidateToolbar(
     onToggleVoice: () -> Unit,
     onToggleTextEditing: () -> Unit,
     onToggleResizeMode: () -> Unit,
-    onModeSwitch: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenClipboard: () -> Unit,
     onOpenClipboardDock: () -> Unit = {},
@@ -1676,47 +1679,10 @@ private fun CandidateToolbar(
             )
         }
 
-        Spacer(modifier = Modifier.width(3.dp))
+        val hasActiveCandidates = candidates.isNotEmpty()
 
-        // Animated Language Morph Mode Switch Pill
-        val modeChipLabel = when (currentMode) {
-            InputMode.BANGLA_PHONETIC -> "ফোনেটিক"
-            InputMode.BANGLA_FIXED -> "প্রভাত"
-            InputMode.ENGLISH -> "ENG"
-            InputMode.NUMBERS_SYMBOLS -> "?123"
-            InputMode.SECONDARY_SYMBOLS -> "=\\<"
-            InputMode.EMOJI -> "Emoji"
-        }
-
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(theme.accentColor).copy(alpha = 0.16f))
-                .border(1.dp, Color(theme.accentColor).copy(alpha = 0.45f), RoundedCornerShape(16.dp))
-                .clickable { onModeSwitch() }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .testTag("mode_switch_pill"),
-            contentAlignment = Alignment.Center
-        ) {
-            AnimatedContent(
-                targetState = modeChipLabel,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(160)) togetherWith fadeOut(animationSpec = tween(120))
-                },
-                label = "language_morph_chip"
-            ) { label ->
-                Text(
-                    text = label,
-                    color = Color(theme.accentColor),
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = HindSiliguri
-                )
-            }
-        }
-
-        // Quick 1-Tap Undo Pill (only shown when undo history exists)
-        if (canUndo) {
+        // Quick 1-Tap Undo Pill (hidden during active candidate typing so suggestion pills don't jump horizontally)
+        if (canUndo && !hasActiveCandidates) {
             Spacer(modifier = Modifier.width(4.dp))
             Row(
                 modifier = Modifier
@@ -1748,8 +1714,8 @@ private fun CandidateToolbar(
             }
         }
 
-        // Quick 1-Tap Redo Pill (only shown when redo history exists)
-        if (canRedo) {
+        // Quick 1-Tap Redo Pill (hidden during active candidate typing to keep suggestion bar wide and steady)
+        if (canRedo && !hasActiveCandidates) {
             Spacer(modifier = Modifier.width(4.dp))
             Row(
                 modifier = Modifier
@@ -1783,79 +1749,70 @@ private fun CandidateToolbar(
 
         Spacer(modifier = Modifier.width(5.dp))
 
-        // Candidate suggestions list OR contextual selection/paste chips
-        LazyRow(
+        // Candidate suggestions list OR contextual selection/paste chips (lightweight Row avoids LazyLayout overhead)
+        val candidatePillShape = remember { RoundedCornerShape(20.dp) }
+        val pillScrollState = rememberScrollState()
+        Row(
             modifier = Modifier
                 .weight(1f)
-                .height(36.dp),
+                .height(36.dp)
+                .horizontalScroll(pillScrollState),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (candidates.isEmpty()) {
                 if (hasSelection || canPaste || clipboardSmartHint != null) {
                     if (clipboardSmartHint != null && !hasSelection) {
-                        item {
-                            ToolbarEditPill(
-                                label = clipboardSmartHint.label,
-                                icon = if (clipboardSmartHint.isUrl) Icons.Default.Link else Icons.Default.Password,
-                                theme = theme,
-                                tag = "btn_toolbar_smart_clip",
-                                onClick = { onInsertSmartHint(clipboardSmartHint.value) }
-                            )
-                        }
-                    }
-                    if (hasSelection) {
-                        item {
-                            ToolbarEditPill(
-                                label = "Cut",
-                                icon = Icons.Default.ContentCut,
-                                theme = theme,
-                                tag = "btn_toolbar_cut",
-                                onClick = { onTextEditAction("CUT") }
-                            )
-                        }
-                        item {
-                            ToolbarEditPill(
-                                label = "Copy",
-                                icon = Icons.Default.ContentCopy,
-                                theme = theme,
-                                tag = "btn_toolbar_copy",
-                                onClick = { onTextEditAction("COPY") }
-                            )
-                        }
-                    }
-                    if (canPaste) {
-                        item {
-                            ToolbarEditPill(
-                                label = "Paste",
-                                icon = Icons.Default.ContentPaste,
-                                theme = theme,
-                                tag = "btn_toolbar_paste",
-                                onClick = { onTextEditAction("PASTE") }
-                            )
-                        }
-                    }
-                } else {
-                    item {
-                        Text(
-                            text = "অক্ষর • Okkhor",
-                            color = Color(theme.candidateBarTextColor).copy(alpha = 0.4f),
-                            fontSize = 12.5.sp,
-                            fontFamily = HindSiliguri,
-                            fontWeight = FontWeight.Normal,
-                            modifier = Modifier.padding(start = 4.dp)
+                        ToolbarEditPill(
+                            label = clipboardSmartHint.label,
+                            icon = if (clipboardSmartHint.isUrl) Icons.Default.Link else Icons.Default.Password,
+                            theme = theme,
+                            tag = "btn_toolbar_smart_clip",
+                            onClick = { onInsertSmartHint(clipboardSmartHint.value) }
                         )
                     }
+                    if (hasSelection) {
+                        ToolbarEditPill(
+                            label = "Cut",
+                            icon = Icons.Default.ContentCut,
+                            theme = theme,
+                            tag = "btn_toolbar_cut",
+                            onClick = { onTextEditAction("CUT") }
+                        )
+                        ToolbarEditPill(
+                            label = "Copy",
+                            icon = Icons.Default.ContentCopy,
+                            theme = theme,
+                            tag = "btn_toolbar_copy",
+                            onClick = { onTextEditAction("COPY") }
+                        )
+                    }
+                    if (canPaste) {
+                        ToolbarEditPill(
+                            label = "Paste",
+                            icon = Icons.Default.ContentPaste,
+                            theme = theme,
+                            tag = "btn_toolbar_paste",
+                            onClick = { onTextEditAction("PASTE") }
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "অক্ষর • Okkhor",
+                        color = Color(theme.candidateBarTextColor).copy(alpha = 0.4f),
+                        fontSize = 12.5.sp,
+                        fontFamily = HindSiliguri,
+                        fontWeight = FontWeight.Normal,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
                 }
             } else {
-                itemsIndexed(candidates) { index, candidate ->
+                candidates.forEachIndexed { index, candidate ->
                     val isFirst = index == 0
-                    val pillShape = RoundedCornerShape(20.dp)
-
                     Box(
                         modifier = Modifier
                             .height(32.dp)
-                            .clip(pillShape)
+                            .clip(candidatePillShape)
                             .background(
                                 if (isFirst) Color(theme.candidateHighlightColor)
                                 else Color(theme.keyBackgroundColor).copy(alpha = 0.88f)
@@ -1863,7 +1820,7 @@ private fun CandidateToolbar(
                             .border(
                                 width = if (isFirst) 0.dp else 1.dp,
                                 color = Color(theme.keyBorderColor).copy(alpha = 0.65f),
-                                shape = pillShape
+                                shape = candidatePillShape
                             )
                             .clickable { onCandidateClick(candidate) }
                             .padding(horizontal = 13.dp),
@@ -1903,105 +1860,109 @@ private fun CandidateToolbar(
             }
         }
 
-        // Direct Text Editing Controller Button
-        IconButton(
-            onClick = onToggleTextEditing,
-            modifier = Modifier
-                .width(actionBtnWidth)
-                .height(40.dp)
-                .clip(CircleShape)
-                .background(if (isTextEditOpen) Color(theme.accentColor).copy(alpha = 0.25f) else Color.Transparent)
-                .testTag("btn_toolbar_text_edit")
-        ) {
-            Icon(
-                imageVector = Icons.Default.TextFields,
-                contentDescription = "Text Editing",
-                tint = if (isTextEditOpen) Color(theme.accentColor) else Color(theme.candidateBarTextColor).copy(alpha = 0.85f),
-                modifier = Modifier.size(17.dp)
-            )
-        }
+        // Collapse secondary utility icons while user is actively picking word candidates so
+        // suggestion pills have generous space without horizontal clipping or crowding.
+        if (!hasActiveCandidates) {
+            // Direct Text Editing Controller Button
+            IconButton(
+                onClick = onToggleTextEditing,
+                modifier = Modifier
+                    .width(actionBtnWidth)
+                    .height(40.dp)
+                    .clip(CircleShape)
+                    .background(if (isTextEditOpen) Color(theme.accentColor).copy(alpha = 0.25f) else Color.Transparent)
+                    .testTag("btn_toolbar_text_edit")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.TextFields,
+                    contentDescription = "Text Editing",
+                    tint = if (isTextEditOpen) Color(theme.accentColor) else Color(theme.candidateBarTextColor).copy(alpha = 0.85f),
+                    modifier = Modifier.size(17.dp)
+                )
+            }
 
-        // Direct Interactive Keyboard Resize Button
-        IconButton(
-            onClick = onToggleResizeMode,
-            modifier = Modifier
-                .width(actionBtnWidth)
-                .height(48.dp)
-                .clip(CircleShape)
-                .background(if (isResizeMode) Color(theme.accentColor).copy(alpha = 0.25f) else Color.Transparent)
-                .testTag("btn_toolbar_resize")
-        ) {
-            Icon(
-                imageVector = Icons.Default.AspectRatio,
-                contentDescription = "Resize Keyboard",
-                tint = if (isResizeMode) Color(theme.accentColor) else Color(theme.candidateBarTextColor).copy(alpha = 0.85f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
+            // Direct Interactive Keyboard Resize Button
+            IconButton(
+                onClick = onToggleResizeMode,
+                modifier = Modifier
+                    .width(actionBtnWidth)
+                    .height(48.dp)
+                    .clip(CircleShape)
+                    .background(if (isResizeMode) Color(theme.accentColor).copy(alpha = 0.25f) else Color.Transparent)
+                    .testTag("btn_toolbar_resize")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AspectRatio,
+                    contentDescription = "Resize Keyboard",
+                    tint = if (isResizeMode) Color(theme.accentColor) else Color(theme.candidateBarTextColor).copy(alpha = 0.85f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
 
-        // Quick Clipboard snippet button (tap = panel, long-press = Floating Quick Dock)
-        val onOpenClipboardState = rememberUpdatedState(onOpenClipboard)
-        val onOpenClipboardDockState = rememberUpdatedState(onOpenClipboardDock)
-        Box(
-            modifier = Modifier
-                .width(actionBtnWidth)
-                .height(40.dp)
-                .clip(CircleShape)
-                .semantics {
-                    role = Role.Button
-                    contentDescription = "Clipboard. Tap for clipboard panel or hold for quick dock."
-                    onClick {
-                        onOpenClipboardState.value()
-                        true
+            // Quick Clipboard snippet button (tap = panel, long-press = Floating Quick Dock)
+            val onOpenClipboardState = rememberUpdatedState(onOpenClipboard)
+            val onOpenClipboardDockState = rememberUpdatedState(onOpenClipboardDock)
+            Box(
+                modifier = Modifier
+                    .width(actionBtnWidth)
+                    .height(40.dp)
+                    .clip(CircleShape)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Clipboard. Tap for clipboard panel or hold for quick dock."
+                        onClick {
+                            onOpenClipboardState.value()
+                            true
+                        }
                     }
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { onOpenClipboardState.value() },
-                        onLongPress = { onOpenClipboardDockState.value() }
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onOpenClipboardState.value() },
+                            onLongPress = { onOpenClipboardDockState.value() }
+                        )
+                    }
+                    .testTag("btn_toolbar_clipboard"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Assignment,
+                    contentDescription = "Clipboard",
+                    tint = Color(theme.candidateBarTextColor).copy(alpha = 0.82f),
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
+            // Quick Theme switcher button
+            if (!compactToolbar) {
+                IconButton(
+                    onClick = onOpenThemes,
+                    modifier = Modifier
+                        .width(actionBtnWidth)
+                        .height(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = "Themes",
+                        tint = Color(theme.candidateBarTextColor).copy(alpha = 0.82f),
+                        modifier = Modifier.size(17.dp)
                     )
                 }
-                .testTag("btn_toolbar_clipboard"),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Assignment,
-                contentDescription = "Clipboard",
-                tint = Color(theme.candidateBarTextColor).copy(alpha = 0.82f),
-                modifier = Modifier.size(17.dp)
-            )
-        }
+            }
 
-        // Quick Theme switcher button
-        if (!compactToolbar) {
+            // Okkhor Settings button
             IconButton(
-                onClick = onOpenThemes,
+                onClick = onOpenSettings,
                 modifier = Modifier
                     .width(actionBtnWidth)
                     .height(40.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Palette,
-                    contentDescription = "Themes",
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
                     tint = Color(theme.candidateBarTextColor).copy(alpha = 0.82f),
                     modifier = Modifier.size(17.dp)
                 )
             }
-        }
-
-        // Okkhor Settings button
-        IconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier
-                .width(actionBtnWidth)
-                .height(40.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "Settings",
-                tint = Color(theme.candidateBarTextColor).copy(alpha = 0.82f),
-                modifier = Modifier.size(17.dp)
-            )
         }
     }
 }
@@ -2809,6 +2770,7 @@ private fun MainKeyboardContent(
     spacing: Dp,
     enterActionLabel: String,
     isSpaceCursorHoldActive: Boolean = false,
+    isOverlayBlockingTouch: Boolean = false,
     playFeedback: () -> Unit,
     playSpecialFeedback: () -> Unit,
     emojiRepository: UnicodeEmojiRepository,
@@ -2864,19 +2826,35 @@ private fun MainKeyboardContent(
     shiftDragHighlightKey: String? = null,
     onShiftDragHighlightChanged: (String?) -> Unit = {}
 ) {
-    val letterKeyBounds = remember { mutableStateMapOf<String, Rect>() }
+    val surfaceState = rememberKeyboardSurfaceTouchState()
+    val surfaceScope = rememberCoroutineScope()
+    val surfaceDensity = LocalDensity.current
     val fixedShiftCharByNormal = remember { mutableStateMapOf<String, String>() }
-    var glideContainerCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var glideTrailPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    val glideEnabledState = rememberUpdatedState(settings.glideTypingEnabled)
+
+    val settingsState = rememberUpdatedState(settings)
     val currentModeState = rememberUpdatedState(currentMode)
+    val isOverlayBlockingState = rememberUpdatedState(isOverlayBlockingTouch)
     val onCommitGlideWordState = rememberUpdatedState(onCommitGlideWord)
     val shiftHighlightState = rememberUpdatedState(shiftDragHighlightKey)
     val onShiftHighlightState = rememberUpdatedState(onShiftDragHighlightChanged)
     val onKeyPressState = rememberUpdatedState(onKeyPress)
+    val onCursorMoveState = rememberUpdatedState(onCursorMove)
+    val onLanguageSwipeStartState = rememberUpdatedState(onLanguageSwipeStart)
+    val onLanguageSwipeUpdateState = rememberUpdatedState(onLanguageSwipeUpdate)
+    val onLanguageSwipeCommitState = rememberUpdatedState(onLanguageSwipeCommit)
+    val onLanguageSwipeCancelState = rememberUpdatedState(onLanguageSwipeCancel)
+    val onSpaceCursorHoldState = rememberUpdatedState(onSpaceCursorHoldStateChanged)
+    val onEmojiDockDragState = rememberUpdatedState(onEmojiDockDrag)
+    val onEmojiDockReleaseState = rememberUpdatedState(onEmojiDockRelease)
+    val onEmojiDockCancelState = rememberUpdatedState(onEmojiDockCancel)
+    val onSymbolDockDragState = rememberUpdatedState(onSymbolDockDrag)
+    val onSymbolDockReleaseState = rememberUpdatedState(onSymbolDockRelease)
+    val onSymbolDockCancelState = rememberUpdatedState(onSymbolDockCancel)
+    val playFeedbackState = rememberUpdatedState(playFeedback)
 
-    LaunchedEffect(currentMode) {
-        letterKeyBounds.clear()
+    LaunchedEffect(currentMode, settings.showNumberRow) {
+        surfaceState.resetTransientState()
         fixedShiftCharByNormal.clear()
         glideTrailPoints = emptyList()
     }
@@ -2892,7 +2870,73 @@ private fun MainKeyboardContent(
         }
     }
 
-    Column {
+    val keySurfaceModifier = if (currentMode != InputMode.EMOJI) {
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords -> surfaceState.recomputeAllBounds(coords) }
+            .keyboardSurfaceTouchDispatcher(
+                key = Pair(currentMode, settings.showNumberRow),
+                surfaceState = surfaceState,
+                coroutineScope = surfaceScope,
+                density = surfaceDensity,
+                isOverlayBlockingTouch = { isOverlayBlockingState.value },
+                glideEnabled = {
+                    settingsState.value.glideTypingEnabled &&
+                        (currentModeState.value == InputMode.ENGLISH || currentModeState.value == InputMode.BANGLA_PHONETIC)
+                },
+                spacebarCursorSwipeEnabled = { settingsState.value.spacebarCursorSwipe },
+                spacebarLanguageSwipeEnabled = { settingsState.value.spacebarLanguageSwipe },
+                onSpaceCursorMove = { delta -> onCursorMoveState.value(delta) },
+                onSpaceLanguageStart = { dx -> onLanguageSwipeStartState.value(dx) },
+                onSpaceLanguageUpdate = { dx -> onLanguageSwipeUpdateState.value(dx) },
+                onSpaceLanguageCommit = { onLanguageSwipeCommitState.value() },
+                onSpaceLanguageCancel = { onLanguageSwipeCancelState.value() },
+                onSpaceCursorHoldStateChanged = { active -> onSpaceCursorHoldState.value(active) },
+                onDockDragRoot = { category, rootPos ->
+                    if (category == KeyHitCategory.EMOJI) onEmojiDockDragState.value(rootPos)
+                    else onSymbolDockDragState.value(rootPos)
+                },
+                onDockRelease = { category ->
+                    if (category == KeyHitCategory.EMOJI) onEmojiDockReleaseState.value()
+                    else onSymbolDockReleaseState.value()
+                },
+                onDockCancel = { category ->
+                    if (category == KeyHitCategory.EMOJI) onEmojiDockCancelState.value()
+                    else onSymbolDockCancelState.value()
+                },
+                onShiftDragTarget = { target -> onShiftHighlightState.value(target) },
+                onShiftDragRelease = {
+                    val target = shiftHighlightState.value
+                    onShiftHighlightState.value(null)
+                    if (!target.isNullOrEmpty()) {
+                        val commitChar = if (currentModeState.value == InputMode.BANGLA_FIXED) {
+                            fixedShiftCharByNormal[target] ?: target
+                        } else {
+                            target.uppercase()
+                        }
+                        if (commitChar.isNotEmpty()) {
+                            playFeedbackState.value()
+                            onKeyPressState.value(commitChar)
+                        }
+                    }
+                },
+                onShiftDragCancel = { onShiftHighlightState.value(null) },
+                onGlideTrailChanged = { points -> glideTrailPoints = points },
+                onCommitGlidePath = { visited ->
+                    val matches = GestureTypingEngine.matchPathToWords(visited, currentModeState.value)
+                    if (matches.isNotEmpty()) {
+                        onCommitGlideWordState.value(matches.first(), matches)
+                    }
+                }
+            )
+            .padding(bottom = 4.dp)
+            .testTag("keyboard_key_matrix")
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = keySurfaceModifier) {
         // --- Optional Dedicated Number Row ---
         if (settings.showNumberRow && currentMode != InputMode.NUMBERS_SYMBOLS && currentMode != InputMode.SECONDARY_SYMBOLS && currentMode != InputMode.EMOJI) {
             val numDigits = if (currentMode.isBangla) KeyboardLayouts.NUMBER_ROW_BANGLA else KeyboardLayouts.NUMBER_ROW_ENGLISH
@@ -2916,6 +2960,9 @@ private fun MainKeyboardContent(
                         cornerRadius = cornerRadius,
                         elevation = elevation,
                         showPopupPreview = settings.keyPopupPreview,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "num_$idx",
+                        surfaceRowIndex = 0,
                         onClick = {
                             playFeedback()
                             onKeyPress(digit)
@@ -2936,256 +2983,166 @@ private fun MainKeyboardContent(
                 val r2 = KeyboardLayouts.ENGLISH_ROW_2
                 val r3 = KeyboardLayouts.ENGLISH_ROW_3
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { glideContainerCoords = it }
-                        .pointerInput(currentMode) {
-                            val slop = viewConfiguration.touchSlop
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                if (!glideEnabledState.value ||
-                                    (currentModeState.value != InputMode.ENGLISH && currentModeState.value != InputMode.BANGLA_PHONETIC)
-                                ) {
-                                    return@awaitEachGesture
-                                }
-                                val containerCoords = glideContainerCoords ?: return@awaitEachGesture
-                                if (!containerCoords.isAttached) return@awaitEachGesture
-                                val downRoot = containerCoords.localToRoot(down.position)
-                                val downKey = KeyboardGestureHelper.resolveBoundsHit(downRoot, null, letterKeyBounds, 8f, 4f)
-                                    ?: return@awaitEachGesture
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing)
+                    ) {
+                        r1.forEach { key ->
+                            val char = if (isShifted) key.uppercase() else key
+                            val secondary = if (settings.longPressSymbolsEnabled) {
+                                KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
+                            } else ""
 
-                                val downLocalPos = down.position
-                                val visited = mutableListOf(downKey)
-                                val points = mutableListOf(downLocalPos)
-                                var isGliding = false
-
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                    val pressedCount = event.changes.count { it.pressed }
-                                    if (pressedCount > 1) {
-                                        isGliding = false
-                                        glideTrailPoints = emptyList()
-                                        break
-                                    }
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) {
-                                        if (isGliding) {
-                                            change.consume()
-                                            val matches = GestureTypingEngine.matchPathToWords(visited, currentModeState.value)
-                                            if (matches.isNotEmpty()) {
-                                                onCommitGlideWordState.value(matches.first(), matches)
-                                            }
-                                        }
-                                        glideTrailPoints = emptyList()
-                                        break
-                                    }
-
-                                    val curCoords = glideContainerCoords
-                                    if (curCoords != null && curCoords.isAttached) {
-                                        val rootPos = curCoords.localToRoot(change.position)
-                                        val hit = KeyboardGestureHelper.resolveBoundsHit(rootPos, null, letterKeyBounds, 8f, 4f)
-                                        if (hit != null && visited.lastOrNull() != hit) {
-                                            visited.add(hit)
-                                        }
-                                        val dist = (change.position - downLocalPos).getDistance()
-                                        if (!isGliding && dist > slop * 2.2f && visited.size >= 2) {
-                                            isGliding = true
-                                        }
-                                        if (isGliding) {
-                                            change.consume()
-                                            points.add(change.position)
-                                            if (points.size > 48) points.removeAt(0)
-                                            glideTrailPoints = points.toList()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // Row 1 (Q W E R T Y U I O P)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(spacing)
-                        ) {
-                            r1.forEach { key ->
-                                val char = if (isShifted) key.uppercase() else key
-                                val secondary = if (settings.longPressSymbolsEnabled) {
-                                    KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
-                                } else ""
-
-                                KeyButton(
-                                    primary = char,
-                                    secondary = secondary,
-                                    weight = 1f,
-                                    height = baseKeyHeight,
-                                    theme = theme,
-                                    cornerRadius = cornerRadius,
-                                    elevation = elevation,
-                                    showPopupPreview = settings.keyPopupPreview,
-                                    isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
-                                    onRootBoundsChanged = { rect -> letterKeyBounds[key] = rect },
-                                    onClick = {
-                                        playFeedback()
-                                        onKeyPress(char)
-                                    },
-                                    onLongClick = {
-                                        handleKeyLongPress(char, secondary)
-                                    }
-                                )
-                            }
-                        }
-
-                        // Row 2 (A S D F G H J K L)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(spacing)
-                        ) {
-                            r2.forEach { key ->
-                                val char = if (isShifted) key.uppercase() else key
-                                val secondary = if (settings.longPressSymbolsEnabled) {
-                                    KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
-                                } else ""
-
-                                KeyButton(
-                                    primary = char,
-                                    secondary = secondary,
-                                    weight = 1f,
-                                    height = baseKeyHeight,
-                                    theme = theme,
-                                    cornerRadius = cornerRadius,
-                                    elevation = elevation,
-                                    showPopupPreview = settings.keyPopupPreview,
-                                    isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
-                                    onRootBoundsChanged = { rect -> letterKeyBounds[key] = rect },
-                                    onClick = {
-                                        playFeedback()
-                                        onKeyPress(char)
-                                    },
-                                    onLongClick = {
-                                        handleKeyLongPress(char, secondary)
-                                    }
-                                )
-                            }
-                        }
-
-                        // Row 3 (Shift + Z X C V B N M + Backspace)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(spacing),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ShiftKeyButton(
-                                isShifted = isShifted,
-                                isCapsLock = isCapsLock,
-                                weight = 1.35f,
+                            KeyButton(
+                                primary = char,
+                                secondary = secondary,
+                                weight = 1f,
                                 height = baseKeyHeight,
                                 theme = theme,
                                 cornerRadius = cornerRadius,
                                 elevation = elevation,
-                                onClick = {
-                                    playSpecialFeedback()
-                                    onActionKey(KeyboardLayouts.CODE_SHIFT)
-                                },
-                                onDragRoot = { rootPos ->
-                                    val hit = KeyboardGestureHelper.resolveBoundsHit(rootPos, null, letterKeyBounds, 14f, 6f)
-                                    onShiftHighlightState.value(hit)
-                                },
-                                onDragRelease = {
-                                    val target = shiftHighlightState.value
-                                    onShiftHighlightState.value(null)
-                                    if (target != null) {
-                                        playFeedback()
-                                        onKeyPressState.value(target.uppercase())
-                                    }
-                                },
-                                onDragCancel = {
-                                    onShiftHighlightState.value(null)
-                                }
-                            )
-
-                            r3.forEach { key ->
-                                val char = if (isShifted) key.uppercase() else key
-                                val secondary = if (settings.longPressSymbolsEnabled) {
-                                    KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
-                                } else ""
-
-                                KeyButton(
-                                    primary = char,
-                                    secondary = secondary,
-                                    weight = 1f,
-                                    height = baseKeyHeight,
-                                    theme = theme,
-                                    cornerRadius = cornerRadius,
-                                    elevation = elevation,
-                                    showPopupPreview = settings.keyPopupPreview,
-                                    isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
-                                    onRootBoundsChanged = { rect -> letterKeyBounds[key] = rect },
-                                    onClick = {
-                                        playFeedback()
-                                        onKeyPress(char)
-                                    },
-                                    onLongClick = {
-                                        handleKeyLongPress(char, secondary)
-                                    }
-                                )
-                            }
-
-                            RepeatableSpecialKeyButton(
-                                icon = {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                        contentDescription = "Backspace",
-                                        tint = Color(theme.specialKeyTextColor),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                weight = 1.35f,
-                                height = baseKeyHeight,
-                                theme = theme,
-                                cornerRadius = cornerRadius,
-                                elevation = elevation,
-                                modifier = Modifier.testTag("btn_backspace"),
+                                showPopupPreview = settings.keyPopupPreview,
+                                isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
+                                surfaceState = surfaceState,
+                                surfaceKeyId = "bn_r1_$key",
+                                surfaceRowIndex = 1,
+                                isGlideEligible = true,
+                                letterLookupKey = key,
                                 onClick = {
                                     playFeedback()
-                                    onActionKey(KeyboardLayouts.CODE_DELETE)
+                                    onKeyPress(char)
                                 },
-                                onSwipeLeft = {
-                                    onDeleteWordSwipe()
+                                onLongClick = {
+                                    handleKeyLongPress(char, secondary)
                                 }
                             )
                         }
                     }
 
-                    if (glideTrailPoints.size >= 2) {
-                        Canvas(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .testTag("glide_typing_trail")
-                        ) {
-                            val path = Path().apply {
-                                moveTo(glideTrailPoints.first().x, glideTrailPoints.first().y)
-                                for (i in 1 until glideTrailPoints.size) {
-                                    lineTo(glideTrailPoints[i].x, glideTrailPoints[i].y)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing)
+                    ) {
+                        Spacer(modifier = Modifier.weight(0.45f))
+                        r2.forEach { key ->
+                            val char = if (isShifted) key.uppercase() else key
+                            val secondary = if (settings.longPressSymbolsEnabled) {
+                                KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
+                            } else ""
+
+                            KeyButton(
+                                primary = char,
+                                secondary = secondary,
+                                weight = 1f,
+                                height = baseKeyHeight,
+                                theme = theme,
+                                cornerRadius = cornerRadius,
+                                elevation = elevation,
+                                showPopupPreview = settings.keyPopupPreview,
+                                isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
+                                surfaceState = surfaceState,
+                                surfaceKeyId = "bn_r2_$key",
+                                surfaceRowIndex = 2,
+                                isGlideEligible = true,
+                                letterLookupKey = key,
+                                onClick = {
+                                    playFeedback()
+                                    onKeyPress(char)
+                                },
+                                onLongClick = {
+                                    handleKeyLongPress(char, secondary)
                                 }
-                            }
-                            drawPath(
-                                path = path,
-                                color = Color(theme.accentColor).copy(alpha = 0.72f),
-                                style = Stroke(
-                                    width = 6.dp.toPx(),
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
-                                )
                             )
                         }
+                        Spacer(modifier = Modifier.weight(0.45f))
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ShiftKeyButton(
+                            isShifted = isShifted,
+                            isCapsLock = isCapsLock,
+                            weight = 1.45f,
+                            height = baseKeyHeight,
+                            theme = theme,
+                            cornerRadius = cornerRadius,
+                            elevation = elevation,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "btn_shift",
+                            surfaceRowIndex = 3,
+                            onClick = {
+                                playSpecialFeedback()
+                                onActionKey(KeyboardLayouts.CODE_SHIFT)
+                            }
+                        )
+
+                        r3.forEach { key ->
+                            val char = if (isShifted) key.uppercase() else key
+                            val secondary = if (settings.longPressSymbolsEnabled) {
+                                KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
+                            } else ""
+
+                            KeyButton(
+                                primary = char,
+                                secondary = secondary,
+                                weight = 1f,
+                                height = baseKeyHeight,
+                                theme = theme,
+                                cornerRadius = cornerRadius,
+                                elevation = elevation,
+                                showPopupPreview = settings.keyPopupPreview,
+                                isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
+                                surfaceState = surfaceState,
+                                surfaceKeyId = "bn_r3_$key",
+                                surfaceRowIndex = 3,
+                                isGlideEligible = true,
+                                letterLookupKey = key,
+                                onClick = {
+                                    playFeedback()
+                                    onKeyPress(char)
+                                },
+                                onLongClick = {
+                                    handleKeyLongPress(char, secondary)
+                                }
+                            )
+                        }
+
+                        RepeatableSpecialKeyButton(
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                    contentDescription = "Backspace",
+                                    tint = Color(theme.specialKeyTextColor),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            weight = 1.45f,
+                            height = baseKeyHeight,
+                            theme = theme,
+                            cornerRadius = cornerRadius,
+                            elevation = elevation,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "btn_backspace",
+                            surfaceRowIndex = 3,
+                            modifier = Modifier.testTag("btn_backspace"),
+                            onClick = {
+                                playFeedback()
+                                onActionKey(KeyboardLayouts.CODE_DELETE)
+                            },
+                            onSwipeLeft = {
+                                onDeleteWordSwipe()
+                            }
+                        )
                     }
                 }
             }
@@ -3195,253 +3152,166 @@ private fun MainKeyboardContent(
                 val r2 = KeyboardLayouts.ENGLISH_ROW_2
                 val r3 = KeyboardLayouts.ENGLISH_ROW_3
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { glideContainerCoords = it }
-                        .pointerInput(currentMode) {
-                            val slop = viewConfiguration.touchSlop
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                if (!glideEnabledState.value ||
-                                    (currentModeState.value != InputMode.ENGLISH && currentModeState.value != InputMode.BANGLA_PHONETIC)
-                                ) {
-                                    return@awaitEachGesture
-                                }
-                                val containerCoords = glideContainerCoords ?: return@awaitEachGesture
-                                if (!containerCoords.isAttached) return@awaitEachGesture
-                                val downRoot = containerCoords.localToRoot(down.position)
-                                val downKey = KeyboardGestureHelper.resolveBoundsHit(downRoot, null, letterKeyBounds, 8f, 4f)
-                                    ?: return@awaitEachGesture
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing)
+                    ) {
+                        r1.forEach { key ->
+                            val char = if (isShifted) key.uppercase() else key
+                            val secondary = if (settings.longPressSymbolsEnabled) {
+                                KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
+                            } else ""
 
-                                val downLocalPos = down.position
-                                val visited = mutableListOf(downKey)
-                                val points = mutableListOf(downLocalPos)
-                                var isGliding = false
-
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                    val pressedCount = event.changes.count { it.pressed }
-                                    if (pressedCount > 1) {
-                                        isGliding = false
-                                        glideTrailPoints = emptyList()
-                                        break
-                                    }
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) {
-                                        if (isGliding) {
-                                            change.consume()
-                                            val matches = GestureTypingEngine.matchPathToWords(visited, currentModeState.value)
-                                            if (matches.isNotEmpty()) {
-                                                onCommitGlideWordState.value(matches.first(), matches)
-                                            }
-                                        }
-                                        glideTrailPoints = emptyList()
-                                        break
-                                    }
-
-                                    val curCoords = glideContainerCoords
-                                    if (curCoords != null && curCoords.isAttached) {
-                                        val rootPos = curCoords.localToRoot(change.position)
-                                        val hit = KeyboardGestureHelper.resolveBoundsHit(rootPos, null, letterKeyBounds, 8f, 4f)
-                                        if (hit != null && visited.lastOrNull() != hit) {
-                                            visited.add(hit)
-                                        }
-                                        val dist = (change.position - downLocalPos).getDistance()
-                                        if (!isGliding && dist > slop * 2.2f && visited.size >= 2) {
-                                            isGliding = true
-                                        }
-                                        if (isGliding) {
-                                            change.consume()
-                                            points.add(change.position)
-                                            if (points.size > 48) points.removeAt(0)
-                                            glideTrailPoints = points.toList()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(spacing)
-                        ) {
-                            r1.forEach { key ->
-                                val char = if (isShifted) key.uppercase() else key
-                                val secondary = if (settings.longPressSymbolsEnabled) {
-                                    KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
-                                } else ""
-
-                                KeyButton(
-                                    primary = char,
-                                    secondary = secondary,
-                                    weight = 1f,
-                                    height = baseKeyHeight,
-                                    theme = theme,
-                                    cornerRadius = cornerRadius,
-                                    elevation = elevation,
-                                    showPopupPreview = settings.keyPopupPreview,
-                                    isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
-                                    onRootBoundsChanged = { rect -> letterKeyBounds[key] = rect },
-                                    onClick = {
-                                        playFeedback()
-                                        onKeyPress(char)
-                                    },
-                                    onLongClick = {
-                                        handleKeyLongPress(char, secondary)
-                                    }
-                                )
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(spacing)
-                        ) {
-                            r2.forEach { key ->
-                                val char = if (isShifted) key.uppercase() else key
-                                val secondary = if (settings.longPressSymbolsEnabled) {
-                                    KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
-                                } else ""
-
-                                KeyButton(
-                                    primary = char,
-                                    secondary = secondary,
-                                    weight = 1f,
-                                    height = baseKeyHeight,
-                                    theme = theme,
-                                    cornerRadius = cornerRadius,
-                                    elevation = elevation,
-                                    showPopupPreview = settings.keyPopupPreview,
-                                    isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
-                                    onRootBoundsChanged = { rect -> letterKeyBounds[key] = rect },
-                                    onClick = {
-                                        playFeedback()
-                                        onKeyPress(char)
-                                    },
-                                    onLongClick = {
-                                        handleKeyLongPress(char, secondary)
-                                    }
-                                )
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 3.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(spacing),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ShiftKeyButton(
-                                isShifted = isShifted,
-                                isCapsLock = isCapsLock,
-                                weight = 1.35f,
+                            KeyButton(
+                                primary = char,
+                                secondary = secondary,
+                                weight = 1f,
                                 height = baseKeyHeight,
                                 theme = theme,
                                 cornerRadius = cornerRadius,
                                 elevation = elevation,
-                                onClick = {
-                                    playSpecialFeedback()
-                                    onActionKey(KeyboardLayouts.CODE_SHIFT)
-                                },
-                                onDragRoot = { rootPos ->
-                                    val hit = KeyboardGestureHelper.resolveBoundsHit(rootPos, null, letterKeyBounds, 14f, 6f)
-                                    onShiftHighlightState.value(hit)
-                                },
-                                onDragRelease = {
-                                    val target = shiftHighlightState.value
-                                    onShiftHighlightState.value(null)
-                                    if (target != null) {
-                                        playFeedback()
-                                        onKeyPressState.value(target.uppercase())
-                                    }
-                                },
-                                onDragCancel = {
-                                    onShiftHighlightState.value(null)
-                                }
-                            )
-
-                            r3.forEach { key ->
-                                val char = if (isShifted) key.uppercase() else key
-                                val secondary = if (settings.longPressSymbolsEnabled) {
-                                    KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
-                                } else ""
-
-                                KeyButton(
-                                    primary = char,
-                                    secondary = secondary,
-                                    weight = 1f,
-                                    height = baseKeyHeight,
-                                    theme = theme,
-                                    cornerRadius = cornerRadius,
-                                    elevation = elevation,
-                                    showPopupPreview = settings.keyPopupPreview,
-                                    isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
-                                    onRootBoundsChanged = { rect -> letterKeyBounds[key] = rect },
-                                    onClick = {
-                                        playFeedback()
-                                        onKeyPress(char)
-                                    },
-                                    onLongClick = {
-                                        handleKeyLongPress(char, secondary)
-                                    }
-                                )
-                            }
-
-                            RepeatableSpecialKeyButton(
-                                icon = {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                        contentDescription = "Backspace",
-                                        tint = Color(theme.specialKeyTextColor),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                weight = 1.35f,
-                                height = baseKeyHeight,
-                                theme = theme,
-                                cornerRadius = cornerRadius,
-                                elevation = elevation,
-                                modifier = Modifier.testTag("btn_backspace"),
+                                showPopupPreview = settings.keyPopupPreview,
+                                isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
+                                surfaceState = surfaceState,
+                                surfaceKeyId = "en_r1_$key",
+                                surfaceRowIndex = 1,
+                                isGlideEligible = true,
+                                letterLookupKey = key,
                                 onClick = {
                                     playFeedback()
-                                    onActionKey(KeyboardLayouts.CODE_DELETE)
+                                    onKeyPress(char)
                                 },
-                                onSwipeLeft = {
-                                    onDeleteWordSwipe()
+                                onLongClick = {
+                                    handleKeyLongPress(char, secondary)
                                 }
                             )
                         }
                     }
 
-                    if (glideTrailPoints.size >= 2) {
-                        Canvas(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .testTag("glide_typing_trail")
-                        ) {
-                            val path = Path().apply {
-                                moveTo(glideTrailPoints.first().x, glideTrailPoints.first().y)
-                                for (i in 1 until glideTrailPoints.size) {
-                                    lineTo(glideTrailPoints[i].x, glideTrailPoints[i].y)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing)
+                    ) {
+                        Spacer(modifier = Modifier.weight(0.45f))
+                        r2.forEach { key ->
+                            val char = if (isShifted) key.uppercase() else key
+                            val secondary = if (settings.longPressSymbolsEnabled) {
+                                KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
+                            } else ""
+
+                            KeyButton(
+                                primary = char,
+                                secondary = secondary,
+                                weight = 1f,
+                                height = baseKeyHeight,
+                                theme = theme,
+                                cornerRadius = cornerRadius,
+                                elevation = elevation,
+                                showPopupPreview = settings.keyPopupPreview,
+                                isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
+                                surfaceState = surfaceState,
+                                surfaceKeyId = "en_r2_$key",
+                                surfaceRowIndex = 2,
+                                isGlideEligible = true,
+                                letterLookupKey = key,
+                                onClick = {
+                                    playFeedback()
+                                    onKeyPress(char)
+                                },
+                                onLongClick = {
+                                    handleKeyLongPress(char, secondary)
                                 }
-                            }
-                            drawPath(
-                                path = path,
-                                color = Color(theme.accentColor).copy(alpha = 0.72f),
-                                style = Stroke(
-                                    width = 6.dp.toPx(),
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
-                                )
                             )
                         }
+                        Spacer(modifier = Modifier.weight(0.45f))
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(spacing),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ShiftKeyButton(
+                            isShifted = isShifted,
+                            isCapsLock = isCapsLock,
+                            weight = 1.45f,
+                            height = baseKeyHeight,
+                            theme = theme,
+                            cornerRadius = cornerRadius,
+                            elevation = elevation,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "btn_shift",
+                            surfaceRowIndex = 3,
+                            onClick = {
+                                playSpecialFeedback()
+                                onActionKey(KeyboardLayouts.CODE_SHIFT)
+                            }
+                        )
+
+                        r3.forEach { key ->
+                            val char = if (isShifted) key.uppercase() else key
+                            val secondary = if (settings.longPressSymbolsEnabled) {
+                                KeyboardLayouts.LONG_PRESS_SYMBOLS[key] ?: ""
+                            } else ""
+
+                            KeyButton(
+                                primary = char,
+                                secondary = secondary,
+                                weight = 1f,
+                                height = baseKeyHeight,
+                                theme = theme,
+                                cornerRadius = cornerRadius,
+                                elevation = elevation,
+                                showPopupPreview = settings.keyPopupPreview,
+                                isGestureHighlighted = shiftDragHighlightKey.equals(key, ignoreCase = true),
+                                surfaceState = surfaceState,
+                                surfaceKeyId = "en_r3_$key",
+                                surfaceRowIndex = 3,
+                                isGlideEligible = true,
+                                letterLookupKey = key,
+                                onClick = {
+                                    playFeedback()
+                                    onKeyPress(char)
+                                },
+                                onLongClick = {
+                                    handleKeyLongPress(char, secondary)
+                                }
+                            )
+                        }
+
+                        RepeatableSpecialKeyButton(
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                    contentDescription = "Backspace",
+                                    tint = Color(theme.specialKeyTextColor),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            weight = 1.45f,
+                            height = baseKeyHeight,
+                            theme = theme,
+                            cornerRadius = cornerRadius,
+                            elevation = elevation,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "btn_backspace",
+                            surfaceRowIndex = 3,
+                            modifier = Modifier.testTag("btn_backspace"),
+                            onClick = {
+                                playFeedback()
+                                onActionKey(KeyboardLayouts.CODE_DELETE)
+                            },
+                            onSwipeLeft = {
+                                onDeleteWordSwipe()
+                            }
+                        )
                     }
                 }
             }
@@ -3476,7 +3346,10 @@ private fun MainKeyboardContent(
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
                             isGestureHighlighted = shiftDragHighlightKey == normChar,
-                            onRootBoundsChanged = { rect -> letterKeyBounds[normChar] = rect },
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "prabhat_r1_$idx",
+                            surfaceRowIndex = 1,
+                            letterLookupKey = normChar,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(primary)
@@ -3510,7 +3383,10 @@ private fun MainKeyboardContent(
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
                             isGestureHighlighted = shiftDragHighlightKey == normChar,
-                            onRootBoundsChanged = { rect -> letterKeyBounds[normChar] = rect },
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "prabhat_r2_$idx",
+                            surfaceRowIndex = 2,
+                            letterLookupKey = normChar,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(primary)
@@ -3537,25 +3413,12 @@ private fun MainKeyboardContent(
                         theme = theme,
                         cornerRadius = cornerRadius,
                         elevation = elevation,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "btn_shift",
+                        surfaceRowIndex = 3,
                         onClick = {
                             playSpecialFeedback()
                             onActionKey(KeyboardLayouts.CODE_SHIFT)
-                        },
-                        onDragRoot = { rootPos ->
-                            val hit = KeyboardGestureHelper.resolveBoundsHit(rootPos, null, letterKeyBounds, 14f, 6f)
-                            onShiftHighlightState.value(hit)
-                        },
-                        onDragRelease = {
-                            val target = shiftHighlightState.value
-                            onShiftHighlightState.value(null)
-                            val shifted = target?.let { fixedShiftCharByNormal[it] } ?: target
-                            if (!shifted.isNullOrEmpty()) {
-                                playFeedback()
-                                onKeyPressState.value(shifted)
-                            }
-                        },
-                        onDragCancel = {
-                            onShiftHighlightState.value(null)
                         }
                     )
 
@@ -3575,7 +3438,10 @@ private fun MainKeyboardContent(
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
                             isGestureHighlighted = shiftDragHighlightKey == normChar,
-                            onRootBoundsChanged = { rect -> letterKeyBounds[normChar] = rect },
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "prabhat_r3_$idx",
+                            surfaceRowIndex = 3,
+                            letterLookupKey = normChar,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(primary)
@@ -3600,6 +3466,9 @@ private fun MainKeyboardContent(
                         theme = theme,
                         cornerRadius = cornerRadius,
                         elevation = elevation,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "btn_backspace",
+                        surfaceRowIndex = 3,
                         modifier = Modifier.testTag("btn_backspace"),
                         onClick = {
                             playFeedback()
@@ -3630,6 +3499,9 @@ private fun MainKeyboardContent(
                             cornerRadius = cornerRadius,
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "sym1_$idx",
+                            surfaceRowIndex = 1,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(digit)
@@ -3648,7 +3520,7 @@ private fun MainKeyboardContent(
                         .padding(horizontal = 3.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(spacing)
                 ) {
-                    KeyboardLayouts.SYMBOLS_ROW_2.forEach { sym ->
+                    KeyboardLayouts.SYMBOLS_ROW_2.forEachIndexed { idx, sym ->
                         KeyButton(
                             primary = sym,
                             weight = 1f,
@@ -3657,6 +3529,9 @@ private fun MainKeyboardContent(
                             cornerRadius = cornerRadius,
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "sym2_$idx",
+                            surfaceRowIndex = 2,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(sym)
@@ -3679,13 +3554,16 @@ private fun MainKeyboardContent(
                         theme = theme,
                         cornerRadius = cornerRadius,
                         elevation = elevation,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "sym_more_toggle",
+                        surfaceRowIndex = 3,
                         onClick = {
                             playSpecialFeedback()
                             onModeSwitch(InputMode.SECONDARY_SYMBOLS)
                         }
                     )
 
-                    KeyboardLayouts.SYMBOLS_ROW_3.forEach { sym ->
+                    KeyboardLayouts.SYMBOLS_ROW_3.forEachIndexed { idx, sym ->
                         KeyButton(
                             primary = sym,
                             weight = 1f,
@@ -3694,6 +3572,9 @@ private fun MainKeyboardContent(
                             cornerRadius = cornerRadius,
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "sym3_$idx",
+                            surfaceRowIndex = 3,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(sym)
@@ -3715,6 +3596,9 @@ private fun MainKeyboardContent(
                         theme = theme,
                         cornerRadius = cornerRadius,
                         elevation = elevation,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "btn_backspace",
+                        surfaceRowIndex = 3,
                         onClick = {
                             playFeedback()
                             onActionKey(KeyboardLayouts.CODE_DELETE)
@@ -3730,7 +3614,7 @@ private fun MainKeyboardContent(
                         .padding(horizontal = 3.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(spacing)
                 ) {
-                    KeyboardLayouts.MORE_SYMBOLS_ROW_1.forEach { sym ->
+                    KeyboardLayouts.MORE_SYMBOLS_ROW_1.forEachIndexed { idx, sym ->
                         KeyButton(
                             primary = sym,
                             weight = 1f,
@@ -3739,6 +3623,9 @@ private fun MainKeyboardContent(
                             cornerRadius = cornerRadius,
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "msym1_$idx",
+                            surfaceRowIndex = 1,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(sym)
@@ -3753,7 +3640,7 @@ private fun MainKeyboardContent(
                         .padding(horizontal = 3.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(spacing)
                 ) {
-                    KeyboardLayouts.MORE_SYMBOLS_ROW_2.forEach { sym ->
+                    KeyboardLayouts.MORE_SYMBOLS_ROW_2.forEachIndexed { idx, sym ->
                         KeyButton(
                             primary = sym,
                             weight = 1f,
@@ -3762,6 +3649,9 @@ private fun MainKeyboardContent(
                             cornerRadius = cornerRadius,
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "msym2_$idx",
+                            surfaceRowIndex = 2,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(sym)
@@ -3784,13 +3674,16 @@ private fun MainKeyboardContent(
                         theme = theme,
                         cornerRadius = cornerRadius,
                         elevation = elevation,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "msym_back_toggle",
+                        surfaceRowIndex = 3,
                         onClick = {
                             playSpecialFeedback()
                             onModeSwitch(InputMode.NUMBERS_SYMBOLS)
                         }
                     )
 
-                    KeyboardLayouts.MORE_SYMBOLS_ROW_3.forEach { sym ->
+                    KeyboardLayouts.MORE_SYMBOLS_ROW_3.forEachIndexed { idx, sym ->
                         KeyButton(
                             primary = sym,
                             weight = 1f,
@@ -3799,6 +3692,9 @@ private fun MainKeyboardContent(
                             cornerRadius = cornerRadius,
                             elevation = elevation,
                             showPopupPreview = settings.keyPopupPreview,
+                            surfaceState = surfaceState,
+                            surfaceKeyId = "msym3_$idx",
+                            surfaceRowIndex = 3,
                             onClick = {
                                 playFeedback()
                                 onKeyPress(sym)
@@ -3820,6 +3716,9 @@ private fun MainKeyboardContent(
                         theme = theme,
                         cornerRadius = cornerRadius,
                         elevation = elevation,
+                        surfaceState = surfaceState,
+                        surfaceKeyId = "btn_backspace",
+                        surfaceRowIndex = 3,
                         onClick = {
                             playFeedback()
                             onActionKey(KeyboardLayouts.CODE_DELETE)
@@ -3897,12 +3796,14 @@ private fun MainKeyboardContent(
                 theme = theme,
                 currentMode = currentMode,
                 baseHeight = baseKeyHeight,
+                spacing = spacing,
                 cornerRadius = cornerRadius,
                 elevation = elevation,
                 enterActionLabel = enterActionLabel,
                 spacebarSwipeEnabled = settings.spacebarCursorSwipe,
                 spacebarLanguageSwipeEnabled = settings.spacebarLanguageSwipe,
                 isSpaceCursorHoldActive = isSpaceCursorHoldActive,
+                surfaceState = surfaceState,
                 onSymbolToggle = {
                     playSpecialFeedback()
                     if (currentMode == InputMode.NUMBERS_SYMBOLS || currentMode == InputMode.SECONDARY_SYMBOLS) {
@@ -3912,17 +3813,11 @@ private fun MainKeyboardContent(
                     }
                 },
                 onSymbolLongPressStart = onSymbolLongPressStart,
-                onSymbolDockDrag = onSymbolDockDrag,
-                onSymbolDockRelease = onSymbolDockRelease,
-                onSymbolDockCancel = onSymbolDockCancel,
                 onEmojiClick = {
                     playSpecialFeedback()
                     onModeSwitch(InputMode.EMOJI)
                 },
                 onEmojiLongPressStart = onEmojiLongPressStart,
-                onEmojiDockDrag = onEmojiDockDrag,
-                onEmojiDockRelease = onEmojiDockRelease,
-                onEmojiDockCancel = onEmojiDockCancel,
                 onLanguageToggle = {
                     playSpecialFeedback()
                     val base = if (currentMode.isTextMode) currentMode else lastTextMode
@@ -3933,14 +3828,6 @@ private fun MainKeyboardContent(
                     playFeedback()
                     onActionKey(KeyboardLayouts.CODE_SPACE)
                 },
-                onCursorSwipe = { delta ->
-                    onCursorMove(delta)
-                },
-                onLanguageSwipeStart = onLanguageSwipeStart,
-                onLanguageSwipeUpdate = onLanguageSwipeUpdate,
-                onLanguageSwipeCommit = onLanguageSwipeCommit,
-                onLanguageSwipeCancel = onLanguageSwipeCancel,
-                onSpaceCursorHoldStateChanged = onSpaceCursorHoldStateChanged,
                 onDotClick = {
                     playFeedback()
                     val symbol = if (currentMode.isBangla) "।" else "."
@@ -3952,6 +3839,100 @@ private fun MainKeyboardContent(
                 }
             )
         }
+    }
+
+    KeyboardLiquidDropOverlay(
+        surfaceState = surfaceState,
+        theme = theme,
+        cornerRadius = cornerRadius,
+        modifier = Modifier.matchParentSize()
+    )
+
+    if (glideTrailPoints.size >= 2) {
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .testTag("glide_typing_trail")
+        ) {
+            val path = Path().apply {
+                moveTo(glideTrailPoints.first().x, glideTrailPoints.first().y)
+                for (i in 1 until glideTrailPoints.size) {
+                    lineTo(glideTrailPoints[i].x, glideTrailPoints[i].y)
+                }
+            }
+            drawPath(
+                path = path,
+                color = Color(theme.accentColor).copy(alpha = 0.72f),
+                style = Stroke(
+                    width = 6.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+            )
+        }
+    }
+    }
+}
+
+@Composable
+private fun SurfaceKeyRegistration(
+    surfaceState: KeyboardSurfaceTouchState?,
+    keyId: String?,
+    letterLookupKey: String? = null,
+    onTap: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    onSwipeLeft: (() -> Unit)? = null
+) {
+    if (surfaceState == null || keyId == null) return
+    val ownershipToken = remember(surfaceState, keyId) { Any() }
+    SideEffect {
+        surfaceState.claimKeyOwner(keyId, ownershipToken)
+        surfaceState.updateKeyCallbacks(
+            id = keyId,
+            letterLookupKey = letterLookupKey,
+            onTap = onTap,
+            onLongPress = onLongPress,
+            onSwipeLeft = onSwipeLeft
+        )
+    }
+    DisposableEffect(surfaceState, keyId) {
+        surfaceState.claimKeyOwner(keyId, ownershipToken)
+        onDispose {
+            surfaceState.unregisterKeyIfOwner(keyId, ownershipToken)
+        }
+    }
+}
+
+private fun Modifier.registerSurfaceBounds(
+    surfaceState: KeyboardSurfaceTouchState?,
+    keyId: String?,
+    category: KeyHitCategory,
+    rowIndex: Int,
+    isBottomRow: Boolean = false,
+    isGlideEligible: Boolean = false,
+    letterLookupKey: String? = null,
+    onTap: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    onSwipeLeft: (() -> Unit)? = null
+): Modifier {
+    if (surfaceState == null || keyId == null) return this
+    return this.onGloballyPositioned { coords ->
+        surfaceState.registerKeyLayout(
+            id = keyId,
+            coords = coords,
+            targetTemplate = KeyHitTarget(
+                id = keyId,
+                category = category,
+                rowIndex = rowIndex,
+                bounds = Rect.Zero,
+                isBottomRow = isBottomRow,
+                isGlideEligible = isGlideEligible
+            ),
+            letterLookupKey = letterLookupKey,
+            onTap = onTap,
+            onLongPress = onLongPress,
+            onSwipeLeft = onSwipeLeft
+        )
     }
 }
 
@@ -3968,12 +3949,20 @@ private fun RowScope.ShiftKeyButton(
     theme: KeyboardTheme,
     cornerRadius: Dp,
     elevation: Dp,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 3,
     onClick: () -> Unit,
     onDragRoot: ((Offset) -> Unit)? = null,
     onDragRelease: (() -> Unit)? = null,
     onDragCancel: (() -> Unit)? = null
 ) {
-    var isPressed by remember { mutableStateOf(false) }
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
     var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val shape = RoundedCornerShape(cornerRadius)
 
@@ -3981,6 +3970,12 @@ private fun RowScope.ShiftKeyButton(
     val onDragRootState = rememberUpdatedState(onDragRoot)
     val onDragReleaseState = rememberUpdatedState(onDragRelease)
     val onDragCancelState = rememberUpdatedState(onDragCancel)
+
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        onTap = { onClickState.value() }
+    )
 
     val bg = when {
         isPressed -> Color(theme.pressedKeyBackgroundColor)
@@ -3997,6 +3992,13 @@ private fun RowScope.ShiftKeyButton(
         modifier = Modifier
             .weight(weight)
             .height(height)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = KeyHitCategory.SHIFT,
+                rowIndex = surfaceRowIndex,
+                onTap = { onClickState.value() }
+            )
             .shadow(if (isPressed) 0.dp else elevation, shape)
             .clip(shape)
             .drawBehind {
@@ -4010,7 +4012,7 @@ private fun RowScope.ShiftKeyButton(
             }
             .background(bg)
             .border(width = theme.borderWidthDp.dp, color = borderClr, shape = shape)
-            .onGloballyPositioned { coords = it }
+            .then(if (surfaceState == null) Modifier.onGloballyPositioned { coords = it } else Modifier)
             .semantics {
                 role = Role.Button
                 contentDescription = if (isCapsLock) "Caps Lock" else "Shift"
@@ -4019,48 +4021,52 @@ private fun RowScope.ShiftKeyButton(
                     true
                 }
             }
-            .pointerInput(Unit) {
-                val slop = viewConfiguration.touchSlop
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val downPos = down.position
-                    isPressed = true
-                    var isDragging = false
-                    var cancelled = false
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        val slop = viewConfiguration.touchSlop
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val downPos = down.position
+                            localPressed = true
+                            var isDragging = false
+                            var cancelled = false
 
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.changes.count { it.pressed } > 1) {
-                            cancelled = true
-                            if (isDragging) onDragCancelState.value?.invoke()
-                            break
-                        }
-                        val change = event.changes.firstOrNull { it.id == down.id }
-                            ?: event.changes.firstOrNull()
-                            ?: break
-                        if (!change.pressed) {
-                            if (isDragging) {
-                                onDragReleaseState.value?.invoke()
-                            } else if (!cancelled) {
-                                onClickState.value()
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.count { it.pressed } > 1) {
+                                    cancelled = true
+                                    if (isDragging) onDragCancelState.value?.invoke()
+                                    break
+                                }
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                    ?: break
+                                if (!change.pressed) {
+                                    if (isDragging) {
+                                        onDragReleaseState.value?.invoke()
+                                    } else if (!cancelled) {
+                                        onClickState.value()
+                                    }
+                                    break
+                                }
+                                val dist = (change.position - downPos).getDistance()
+                                if (!isDragging && dist > slop && onDragRootState.value != null) {
+                                    isDragging = true
+                                }
+                                if (isDragging) {
+                                    change.consume()
+                                    val rootPos = coords?.let { if (it.isAttached) it.localToRoot(change.position) else null }
+                                    if (rootPos != null) {
+                                        onDragRootState.value?.invoke(rootPos)
+                                    }
+                                }
                             }
-                            break
-                        }
-                        val dist = (change.position - downPos).getDistance()
-                        if (!isDragging && dist > slop && onDragRootState.value != null) {
-                            isDragging = true
-                        }
-                        if (isDragging) {
-                            change.consume()
-                            val rootPos = coords?.let { if (it.isAttached) it.localToRoot(change.position) else null }
-                            if (rootPos != null) {
-                                onDragRootState.value?.invoke(rootPos)
-                            }
+                            localPressed = false
                         }
                     }
-                    isPressed = false
-                }
-            }
+                } else Modifier
+            )
             .testTag("btn_shift"),
         contentAlignment = Alignment.Center
     ) {
@@ -4114,34 +4120,37 @@ private fun BottomControlRow(
     theme: KeyboardTheme,
     currentMode: InputMode,
     baseHeight: Dp,
+    spacing: Dp,
     cornerRadius: Dp,
     elevation: Dp,
     enterActionLabel: String,
     spacebarSwipeEnabled: Boolean,
     spacebarLanguageSwipeEnabled: Boolean,
     isSpaceCursorHoldActive: Boolean,
+    surfaceState: KeyboardSurfaceTouchState? = null,
     onSymbolToggle: () -> Unit,
     onSymbolLongPressStart: () -> Unit = {},
     onSymbolDockDrag: (Offset) -> Unit = {},
     onSymbolDockRelease: () -> Unit = {},
     onSymbolDockCancel: () -> Unit = {},
     onEmojiClick: () -> Unit,
-    onEmojiLongPressStart: () -> Unit,
-    onEmojiDockDrag: (Offset) -> Unit,
-    onEmojiDockRelease: () -> Unit,
-    onEmojiDockCancel: () -> Unit,
+    onEmojiLongPressStart: () -> Unit = {},
+    onEmojiDockDrag: (Offset) -> Unit = {},
+    onEmojiDockRelease: () -> Unit = {},
+    onEmojiDockCancel: () -> Unit = {},
     onLanguageToggle: () -> Unit,
     onSpaceClick: () -> Unit,
-    onCursorSwipe: (Int) -> Unit,
-    onLanguageSwipeStart: (Float) -> Unit,
-    onLanguageSwipeUpdate: (Float) -> Unit,
-    onLanguageSwipeCommit: () -> Unit,
-    onLanguageSwipeCancel: () -> Unit,
-    onSpaceCursorHoldStateChanged: (Boolean) -> Unit,
+    onCursorSwipe: (Int) -> Unit = {},
+    onLanguageSwipeStart: (Float) -> Unit = {},
+    onLanguageSwipeUpdate: (Float) -> Unit = {},
+    onLanguageSwipeCommit: () -> Unit = {},
+    onLanguageSwipeCancel: () -> Unit = {},
+    onSpaceCursorHoldStateChanged: (Boolean) -> Unit = {},
     onDotClick: () -> Unit,
     onEnterClick: () -> Unit
 ) {
-    var isSpacePressed by remember { mutableStateOf(false) }
+    var localSpacePressed by remember { mutableStateOf(false) }
+    val isSpacePressed = if (surfaceState != null) surfaceState.isPressed("spacebar") else localSpacePressed
     val density = LocalDensity.current
     val gestureScope = rememberCoroutineScope()
 
@@ -4155,21 +4164,31 @@ private fun BottomControlRow(
     val onLanguageSwipeCancelState = rememberUpdatedState(onLanguageSwipeCancel)
     val onCursorHoldChangedState = rememberUpdatedState(onSpaceCursorHoldStateChanged)
 
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = "spacebar",
+        onTap = { onSpaceClickState.value() }
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 3.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(theme.keySpacingDp.dp),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val symbolLabel = if (currentMode == InputMode.NUMBERS_SYMBOLS || currentMode == InputMode.SECONDARY_SYMBOLS) "ABC" else "?123"
         SymbolDockTriggerTextButton(
             text = symbolLabel,
-            weight = 1.35f,
+            weight = 1.25f,
             height = baseHeight,
             theme = theme,
             cornerRadius = cornerRadius,
             elevation = elevation,
+            surfaceState = surfaceState,
+            surfaceKeyId = "btn_symbol_key",
+            surfaceRowIndex = 4,
+            isBottomRow = true,
             onTap = onSymbolToggle,
             onLongPressStart = onSymbolLongPressStart,
             onDragRoot = onSymbolDockDrag,
@@ -4178,11 +4197,15 @@ private fun BottomControlRow(
         )
 
         EmojiDockTriggerKeyButton(
-            weight = 1.05f,
+            weight = 1.0f,
             height = baseHeight,
             theme = theme,
             cornerRadius = cornerRadius,
             elevation = elevation,
+            surfaceState = surfaceState,
+            surfaceKeyId = "btn_emoji",
+            surfaceRowIndex = 4,
+            isBottomRow = true,
             onTap = onEmojiClick,
             onLongPressStart = onEmojiLongPressStart,
             onDragRoot = onEmojiDockDrag,
@@ -4199,11 +4222,16 @@ private fun BottomControlRow(
                     modifier = Modifier.size(20.dp)
                 )
             },
-            weight = 1.05f,
+            weight = 1.0f,
             height = baseHeight,
             theme = theme,
             cornerRadius = cornerRadius,
             elevation = elevation,
+            surfaceState = surfaceState,
+            surfaceKeyId = "btn_language",
+            surfaceRowIndex = 4,
+            isBottomRow = true,
+            surfaceCategory = KeyHitCategory.LANGUAGE,
             modifier = Modifier.testTag("btn_language"),
             onClick = onLanguageToggle
         )
@@ -4216,13 +4244,21 @@ private fun BottomControlRow(
             else -> "Space"
         }
 
-        val spaceShape = RoundedCornerShape(cornerRadius)
+        val spaceShape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
 
         // Spacebar (Tap = space, Horizontal Swipe = Language Switcher, Hold + Drag = Cursor Move)
         Box(
             modifier = Modifier
-                .weight(4.0f)
+                .weight(4.4f)
                 .height(baseHeight)
+                .registerSurfaceBounds(
+                    surfaceState = surfaceState,
+                    keyId = "spacebar",
+                    category = KeyHitCategory.SPACEBAR,
+                    rowIndex = 4,
+                    isBottomRow = true,
+                    onTap = { onSpaceClickState.value() }
+                )
                 .shadow(elevation, spaceShape)
                 .clip(spaceShape)
                 .drawBehind {
@@ -4254,115 +4290,119 @@ private fun BottomControlRow(
                         true
                     }
                 }
-                .pointerInput(Unit) {
-                    val slop = viewConfiguration.touchSlop
-                    val cursorHoldDelayMs = 340L
-                    val cancelYUpPx = with(density) { 110.dp.toPx() }
-                    val cancelYDownPx = with(density) { 64.dp.toPx() }
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val activePointerId = down.id
-                        val downPos = down.position
-                        isSpacePressed = true
+                .then(
+                    if (surfaceState == null) {
+                        Modifier.pointerInput(Unit) {
+                            val slop = viewConfiguration.touchSlop
+                            val swipeActivatePx = maxOf(slop * 2.4f, with(density) { 20.dp.toPx() })
+                            val verticalJitterPx = maxOf(slop * 2.5f, with(density) { 22.dp.toPx() })
+                            val cursorHoldDelayMs = 340L
+                            val cancelYUpPx = with(density) { 110.dp.toPx() }
+                            val cancelYDownPx = with(density) { 64.dp.toPx() }
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val activePointerId = down.id
+                                val downPos = down.position
+                                localSpacePressed = true
 
-                        var gestureMode = SpacebarGestureMode.NONE
-                        var accumulatedCursorDrag = 0f
+                                var gestureMode = SpacebarGestureMode.NONE
+                                var accumulatedCursorDrag = 0f
 
-                        val cursorHoldJob = if (spacebarSwipeEnabledState.value) {
-                            gestureScope.launch {
-                                delay(cursorHoldDelayMs)
-                                if (gestureMode == SpacebarGestureMode.NONE) {
-                                    gestureMode = SpacebarGestureMode.CURSOR_SWIPE
-                                    onCursorHoldChangedState.value(true)
-                                }
-                            }
-                        } else null
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val pressedCount = event.changes.count { it.pressed }
-                            if (pressedCount > 1) {
-                                cursorHoldJob?.cancel()
-                                if (gestureMode == SpacebarGestureMode.LANGUAGE_SWITCH) {
-                                    onLanguageSwipeCancelState.value()
-                                }
-                                if (gestureMode == SpacebarGestureMode.CURSOR_SWIPE) {
-                                    onCursorHoldChangedState.value(false)
-                                }
-                                gestureMode = SpacebarGestureMode.CANCELLED
-                                break
-                            }
-                            val change = event.changes.firstOrNull { it.id == activePointerId }
-                                ?: event.changes.firstOrNull()
-                                ?: break
-
-                            if (!change.pressed) {
-                                cursorHoldJob?.cancel()
-                                when (gestureMode) {
-                                    SpacebarGestureMode.NONE -> onSpaceClickState.value()
-                                    SpacebarGestureMode.LANGUAGE_SWITCH -> onLanguageSwipeCommitState.value()
-                                    SpacebarGestureMode.CURSOR_SWIPE -> onCursorHoldChangedState.value(false)
-                                    SpacebarGestureMode.CANCELLED -> Unit
-                                }
-                                break
-                            }
-
-                            val dx = change.position.x - change.previousPosition.x
-                            val netDx = change.position.x - downPos.x
-                            val netDy = change.position.y - downPos.y
-
-                            when (gestureMode) {
-                                SpacebarGestureMode.NONE -> {
-                                    if (abs(netDx) > slop || abs(netDy) > slop) {
-                                        cursorHoldJob?.cancel()
-                                        if (abs(netDy) > abs(netDx) * 1.5f && abs(netDy) > slop * 1.5f) {
-                                            gestureMode = SpacebarGestureMode.CANCELLED
-                                        } else if (spacebarLanguageSwipeState.value && abs(netDx) > slop) {
-                                            gestureMode = SpacebarGestureMode.LANGUAGE_SWITCH
-                                            change.consume()
-                                            onLanguageSwipeStartState.value(netDx)
-                                        } else if (spacebarSwipeEnabledState.value && abs(netDx) > slop) {
+                                val cursorHoldJob = if (spacebarSwipeEnabledState.value) {
+                                    gestureScope.launch {
+                                        delay(cursorHoldDelayMs)
+                                        if (gestureMode == SpacebarGestureMode.NONE) {
                                             gestureMode = SpacebarGestureMode.CURSOR_SWIPE
+                                            onCursorHoldChangedState.value(true)
+                                        }
+                                    }
+                                } else null
+
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val pressedCount = event.changes.count { it.pressed }
+                                    if (pressedCount > 1) {
+                                        cursorHoldJob?.cancel()
+                                        if (gestureMode == SpacebarGestureMode.LANGUAGE_SWITCH) {
+                                            onLanguageSwipeCancelState.value()
+                                        }
+                                        if (gestureMode == SpacebarGestureMode.CURSOR_SWIPE) {
+                                            onCursorHoldChangedState.value(false)
+                                        }
+                                        gestureMode = SpacebarGestureMode.CANCELLED
+                                        break
+                                    }
+                                    val change = event.changes.firstOrNull { it.id == activePointerId }
+                                        ?: event.changes.firstOrNull()
+                                        ?: break
+
+                                    if (!change.pressed) {
+                                        cursorHoldJob?.cancel()
+                                        when (gestureMode) {
+                                            SpacebarGestureMode.NONE -> onSpaceClickState.value()
+                                            SpacebarGestureMode.LANGUAGE_SWITCH -> onLanguageSwipeCommitState.value()
+                                            SpacebarGestureMode.CURSOR_SWIPE -> onCursorHoldChangedState.value(false)
+                                            SpacebarGestureMode.CANCELLED -> Unit
+                                        }
+                                        break
+                                    }
+
+                                    val dx = change.position.x - change.previousPosition.x
+                                    val netDx = change.position.x - downPos.x
+                                    val netDy = change.position.y - downPos.y
+
+                                    when (gestureMode) {
+                                        SpacebarGestureMode.NONE -> {
+                                            if (abs(netDx) > slop || abs(netDy) > slop) {
+                                                cursorHoldJob?.cancel()
+                                            }
+                                            if (abs(netDy) > abs(netDx) * 1.6f && abs(netDy) > verticalJitterPx) {
+                                                gestureMode = SpacebarGestureMode.CANCELLED
+                                            } else if (spacebarLanguageSwipeState.value && abs(netDx) > swipeActivatePx) {
+                                                gestureMode = SpacebarGestureMode.LANGUAGE_SWITCH
+                                                change.consume()
+                                                onLanguageSwipeStartState.value(netDx)
+                                            } else if (!spacebarLanguageSwipeState.value && spacebarSwipeEnabledState.value && abs(netDx) > swipeActivatePx) {
+                                                gestureMode = SpacebarGestureMode.CURSOR_SWIPE
+                                                change.consume()
+                                                accumulatedCursorDrag += dx
+                                            }
+                                        }
+
+                                        SpacebarGestureMode.LANGUAGE_SWITCH -> {
+                                            change.consume()
+                                            if (netDy < -cancelYUpPx || netDy > cancelYDownPx) {
+                                                onLanguageSwipeCancelState.value()
+                                                gestureMode = SpacebarGestureMode.CANCELLED
+                                            } else {
+                                                onLanguageSwipeUpdateState.value(netDx)
+                                            }
+                                        }
+
+                                        SpacebarGestureMode.CURSOR_SWIPE -> {
                                             change.consume()
                                             accumulatedCursorDrag += dx
-                                        } else {
-                                            gestureMode = SpacebarGestureMode.CANCELLED
+                                            val threshold = 32f
+                                            while (abs(accumulatedCursorDrag) >= threshold) {
+                                                val direction = if (accumulatedCursorDrag > 0) 1 else -1
+                                                onCursorSwipeState.value(direction)
+                                                accumulatedCursorDrag -= direction * threshold
+                                            }
+                                        }
+
+                                        SpacebarGestureMode.CANCELLED -> {
+                                            change.consume()
                                         }
                                     }
                                 }
 
-                                SpacebarGestureMode.LANGUAGE_SWITCH -> {
-                                    change.consume()
-                                    if (netDy < -cancelYUpPx || netDy > cancelYDownPx) {
-                                        onLanguageSwipeCancelState.value()
-                                        gestureMode = SpacebarGestureMode.CANCELLED
-                                    } else {
-                                        onLanguageSwipeUpdateState.value(netDx)
-                                    }
-                                }
-
-                                SpacebarGestureMode.CURSOR_SWIPE -> {
-                                    change.consume()
-                                    accumulatedCursorDrag += dx
-                                    val threshold = 32f
-                                    while (abs(accumulatedCursorDrag) >= threshold) {
-                                        val direction = if (accumulatedCursorDrag > 0) 1 else -1
-                                        onCursorSwipeState.value(direction)
-                                        accumulatedCursorDrag -= direction * threshold
-                                    }
-                                }
-
-                                SpacebarGestureMode.CANCELLED -> {
-                                    change.consume()
-                                }
+                                cursorHoldJob?.cancel()
+                                onCursorHoldChangedState.value(false)
+                                localSpacePressed = false
                             }
                         }
-
-                        cursorHoldJob?.cancel()
-                        onCursorHoldChangedState.value(false)
-                        isSpacePressed = false
-                    }
-                }
+                    } else Modifier
+                )
                 .testTag("spacebar"),
             contentAlignment = Alignment.Center
         ) {
@@ -4406,22 +4446,42 @@ private fun BottomControlRow(
         KeyButton(
             primary = punct,
             secondary = if (currentMode.isBangla) "." else "!",
-            weight = 1.05f,
+            weight = 1.0f,
             height = baseHeight,
             theme = theme,
             cornerRadius = cornerRadius,
             elevation = elevation,
             showPopupPreview = settings.keyPopupPreview,
+            surfaceState = surfaceState,
+            surfaceKeyId = "key_dot",
+            surfaceRowIndex = 4,
+            isBottomRow = true,
             onClick = onDotClick
         )
 
-        val enterShape = RoundedCornerShape(cornerRadius)
-        var isEnterPressed by remember { mutableStateOf(false) }
+        val enterShape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+        var localEnterPressed by remember { mutableStateOf(false) }
+        val isEnterPressed = if (surfaceState != null) surfaceState.isPressed("btn_enter") else localEnterPressed
+        val onEnterClickState = rememberUpdatedState(onEnterClick)
+
+        SurfaceKeyRegistration(
+            surfaceState = surfaceState,
+            keyId = "btn_enter",
+            onTap = { onEnterClickState.value() }
+        )
 
         Box(
             modifier = Modifier
-                .weight(1.45f)
+                .weight(1.4f)
                 .height(baseHeight)
+                .registerSurfaceBounds(
+                    surfaceState = surfaceState,
+                    keyId = "btn_enter",
+                    category = KeyHitCategory.ENTER,
+                    rowIndex = 4,
+                    isBottomRow = true,
+                    onTap = { onEnterClickState.value() }
+                )
                 .shadow(elevation, enterShape)
                 .clip(enterShape)
                 .drawBehind {
@@ -4442,7 +4502,30 @@ private fun BottomControlRow(
                     color = Color(theme.accentColor).copy(alpha = 0.7f),
                     shape = enterShape
                 )
-                .clickable { onEnterClick() },
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = enterActionLabel
+                    onClick {
+                        onEnterClickState.value()
+                        true
+                    }
+                }
+                .then(
+                    if (surfaceState == null) {
+                        Modifier.pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                localEnterPressed = true
+                                val up = waitForUpOrCancellation()
+                                localEnterPressed = false
+                                if (up != null && up.id == down.id && !up.isConsumed) {
+                                    onEnterClickState.value()
+                                }
+                            }
+                        }
+                    } else Modifier
+                )
+                .testTag("btn_enter"),
             contentAlignment = Alignment.Center
         ) {
             val actionIcon = when (enterActionLabel.lowercase()) {
@@ -4478,23 +4561,51 @@ fun RowScope.KeyButton(
     elevation: Dp,
     showPopupPreview: Boolean = true,
     isGestureHighlighted: Boolean = false,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 1,
+    isBottomRow: Boolean = false,
+    isGlideEligible: Boolean = false,
+    letterLookupKey: String? = null,
     onRootBoundsChanged: ((Rect) -> Unit)? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(cornerRadius)
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val popupShape = remember { RoundedCornerShape(10.dp) }
+    val touchScope = rememberCoroutineScope()
     val onClickState = rememberUpdatedState(onClick)
     val onLongClickState = rememberUpdatedState(onLongClick)
 
-    val scale by animateFloatAsState(
-        targetValue = when {
-            isGestureHighlighted -> 1.07f
-            isPressed -> 0.965f
-            else -> 1.0f
-        },
-        label = "key_scale"
+    val longPressCallback: (() -> Unit)? = if (onLongClick != null) {
+        { onLongClickState.value?.invoke() }
+    } else null
+    val resolvedLookupKey = letterLookupKey ?: primary
+    val hitCategory = if (surfaceRowIndex == 0 || isBottomRow || letterLookupKey == null) {
+        KeyHitCategory.NUMBER_OR_SYMBOL
+    } else {
+        KeyHitCategory.LETTER
+    }
+
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        letterLookupKey = resolvedLookupKey,
+        onTap = { onClickState.value() },
+        onLongPress = longPressCallback
     )
+
+    val scale = when {
+        isGestureHighlighted -> 1.07f
+        isPressed -> 0.97f
+        else -> 1.0f
+    }
 
     val bg = when {
         isGestureHighlighted -> Color(theme.accentColor).copy(alpha = 0.28f)
@@ -4518,8 +4629,19 @@ fun RowScope.KeyButton(
         modifier = Modifier
             .weight(weight)
             .height(height)
-            .scale(scale)
-            .shadow(if (isPressed) 0.dp else elevation, shape)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = hitCategory,
+                rowIndex = surfaceRowIndex,
+                isBottomRow = isBottomRow,
+                isGlideEligible = isGlideEligible,
+                letterLookupKey = resolvedLookupKey,
+                onTap = { onClickState.value() },
+                onLongPress = longPressCallback
+            )
+            .then(if (scale != 1.0f) Modifier.scale(scale) else Modifier)
+            .shadow(elevation, shape)
             .clip(shape)
             .drawBehind {
                 val rimHeight = 2.dp.toPx()
@@ -4539,24 +4661,69 @@ fun RowScope.KeyButton(
                     }
                 } else Modifier
             )
-            .pointerInput(primary, secondary) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
-                    },
-                    onTap = { onClickState.value() },
-                    onLongPress = {
-                        val longCb = onLongClickState.value
-                        if (longCb != null) {
-                            longCb()
-                        } else {
-                            onClickState.value()
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                onClick {
+                    onClickState.value()
+                    true
+                }
+            }
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        val slop = viewConfiguration.touchSlop
+                        val longPressMs = viewConfiguration.longPressTimeoutMillis
+                        val releaseSlopPx = maxOf(slop * 2.2f, 22.dp.toPx())
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val downPos = down.position
+                            localPressed = true
+
+                            var longPressTriggered = false
+                            var movedBeyondLongPress = false
+
+                            val longPressJob = touchScope.launch {
+                                delay(longPressMs)
+                                if (!movedBeyondLongPress && onLongClickState.value != null) {
+                                    longPressTriggered = true
+                                    onLongClickState.value?.invoke()
+                                }
+                            }
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    longPressJob.cancel()
+                                    if (!longPressTriggered && !change.isConsumed) {
+                                        val dist = (change.position - downPos).getDistance()
+                                        val inBounds = change.position.x >= -14.dp.toPx() &&
+                                            change.position.x <= size.width + 14.dp.toPx() &&
+                                            change.position.y >= -18.dp.toPx() &&
+                                            change.position.y <= size.height + 14.dp.toPx()
+                                        if (inBounds || dist <= releaseSlopPx) {
+                                            onClickState.value()
+                                        } else {
+                                            TypingPerformanceTracker.recordMissedTouch()
+                                        }
+                                    }
+                                    break
+                                }
+
+                                if (!movedBeyondLongPress) {
+                                    val dist = (change.position - downPos).getDistance()
+                                    if (dist > slop * 1.4f) {
+                                        movedBeyondLongPress = true
+                                        longPressJob.cancel()
+                                    }
+                                }
+                            }
+                            longPressJob.cancel()
+                            localPressed = false
                         }
                     }
-                )
-            }
+                } else Modifier
+            )
             .testTag("key_$primary"),
         contentAlignment = Alignment.Center
     ) {
@@ -4577,10 +4744,10 @@ fun RowScope.KeyButton(
                     .offset(y = (-52).dp)
                     .zIndex(100f)
                     .size(width = 48.dp, height = 50.dp)
-                    .shadow(8.dp, RoundedCornerShape(10.dp))
-                    .clip(RoundedCornerShape(10.dp))
+                    .shadow(8.dp, popupShape)
+                    .clip(popupShape)
                     .background(Color(theme.popupBackgroundColor))
-                    .border(1.2.dp, Color(theme.keyBorderColor), RoundedCornerShape(10.dp)),
+                    .border(1.2.dp, Color(theme.keyBorderColor), popupShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -4631,13 +4798,22 @@ private fun RowScope.EmojiDockTriggerKeyButton(
     theme: KeyboardTheme,
     cornerRadius: Dp,
     elevation: Dp,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 4,
+    isBottomRow: Boolean = true,
     onTap: () -> Unit,
     onLongPressStart: () -> Unit,
     onDragRoot: (Offset) -> Unit,
     onRelease: () -> Unit,
     onCancel: () -> Unit
 ) {
-    var isPressed by remember { mutableStateOf(false) }
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
     var buttonCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val shape = RoundedCornerShape(cornerRadius)
     val scope = rememberCoroutineScope()
@@ -4648,10 +4824,26 @@ private fun RowScope.EmojiDockTriggerKeyButton(
     val onReleaseState = rememberUpdatedState(onRelease)
     val onCancelState = rememberUpdatedState(onCancel)
 
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        onTap = { onTapState.value() },
+        onLongPress = { onLongPressStartState.value() }
+    )
+
     Box(
         modifier = Modifier
             .weight(weight)
             .height(height)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = KeyHitCategory.EMOJI,
+                rowIndex = surfaceRowIndex,
+                isBottomRow = isBottomRow,
+                onTap = { onTapState.value() },
+                onLongPress = { onLongPressStartState.value() }
+            )
             .shadow(if (isPressed) 0.dp else elevation, shape)
             .clip(shape)
             .drawBehind {
@@ -4672,9 +4864,7 @@ private fun RowScope.EmojiDockTriggerKeyButton(
                 color = Color(theme.specialKeyBorderColor),
                 shape = shape
             )
-            .onGloballyPositioned { coords ->
-                buttonCoords = coords
-            }
+            .then(if (surfaceState == null) Modifier.onGloballyPositioned { buttonCoords = it } else Modifier)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 contentDescription = "Emoji. Tap for emoji panel or hold and drag for quick recent emojis."
@@ -4683,73 +4873,77 @@ private fun RowScope.EmojiDockTriggerKeyButton(
                     true
                 }
             }
-            .pointerInput(Unit) {
-                val slop = viewConfiguration.touchSlop
-                val longPressMs = viewConfiguration.longPressTimeoutMillis
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val activePointerId = down.id
-                    val downPos = down.position
-                    isPressed = true
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        val slop = viewConfiguration.touchSlop
+                        val longPressMs = viewConfiguration.longPressTimeoutMillis
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val activePointerId = down.id
+                            val downPos = down.position
+                            localPressed = true
 
-                    var dockOpened = false
-                    var gestureCancelled = false
-                    var movedBeforeLongPress = false
+                            var dockOpened = false
+                            var gestureCancelled = false
+                            var movedBeforeLongPress = false
 
-                    val longPressJob = scope.launch {
-                        delay(longPressMs)
-                        if (!gestureCancelled && !movedBeforeLongPress) {
-                            dockOpened = true
-                            onLongPressStartState.value()
+                            val longPressJob = scope.launch {
+                                delay(longPressMs)
+                                if (!gestureCancelled && !movedBeforeLongPress) {
+                                    dockOpened = true
+                                    onLongPressStartState.value()
+                                }
+                            }
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val pressedCount = event.changes.count { it.pressed }
+                                if (pressedCount > 1) {
+                                    gestureCancelled = true
+                                    longPressJob.cancel()
+                                    if (dockOpened) {
+                                        onCancelState.value()
+                                    }
+                                    break
+                                }
+                                val change = event.changes.firstOrNull { it.id == activePointerId }
+                                    ?: event.changes.firstOrNull()
+                                    ?: break
+
+                                if (!change.pressed) {
+                                    longPressJob.cancel()
+                                    if (dockOpened) {
+                                        onReleaseState.value()
+                                    } else if (!gestureCancelled && !movedBeforeLongPress) {
+                                        onTapState.value()
+                                    }
+                                    break
+                                }
+
+                                val distFromDown = (change.position - downPos).getDistance()
+                                if (!dockOpened) {
+                                    if (distFromDown > slop) {
+                                        movedBeforeLongPress = true
+                                        longPressJob.cancel()
+                                    }
+                                } else {
+                                    change.consume()
+                                    val rootPos = buttonCoords?.let { coords ->
+                                        if (coords.isAttached) coords.localToRoot(change.position) else null
+                                    }
+                                    if (rootPos != null) {
+                                        onDragRootState.value(rootPos)
+                                    }
+                                }
+                            }
+
+                            longPressJob.cancel()
+                            localPressed = false
                         }
                     }
-
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pressedCount = event.changes.count { it.pressed }
-                        if (pressedCount > 1) {
-                            gestureCancelled = true
-                            longPressJob.cancel()
-                            if (dockOpened) {
-                                onCancelState.value()
-                            }
-                            break
-                        }
-                        val change = event.changes.firstOrNull { it.id == activePointerId }
-                            ?: event.changes.firstOrNull()
-                            ?: break
-
-                        if (!change.pressed) {
-                            longPressJob.cancel()
-                            if (dockOpened) {
-                                onReleaseState.value()
-                            } else if (!gestureCancelled && !movedBeforeLongPress) {
-                                onTapState.value()
-                            }
-                            break
-                        }
-
-                        val distFromDown = (change.position - downPos).getDistance()
-                        if (!dockOpened) {
-                            if (distFromDown > slop) {
-                                movedBeforeLongPress = true
-                                longPressJob.cancel()
-                            }
-                        } else {
-                            change.consume()
-                            val rootPos = buttonCoords?.let { coords ->
-                                if (coords.isAttached) coords.localToRoot(change.position) else null
-                            }
-                            if (rootPos != null) {
-                                onDragRootState.value(rootPos)
-                            }
-                        }
-                    }
-
-                    longPressJob.cancel()
-                    isPressed = false
-                }
-            }
+                } else Modifier
+            )
             .testTag("btn_emoji"),
         contentAlignment = Alignment.Center
     ) {
@@ -4782,10 +4976,27 @@ fun RowScope.SpecialKeyButton(
     cornerRadius: Dp,
     elevation: Dp,
     modifier: Modifier = Modifier,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 4,
+    isBottomRow: Boolean = true,
+    surfaceCategory: KeyHitCategory = KeyHitCategory.LANGUAGE,
     onClick: () -> Unit
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(cornerRadius)
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val onClickState = rememberUpdatedState(onClick)
+
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        onTap = { onClickState.value() }
+    )
 
     val bg = when {
         isPressed -> Color(theme.pressedKeyBackgroundColor)
@@ -4802,7 +5013,15 @@ fun RowScope.SpecialKeyButton(
         modifier = modifier
             .weight(weight)
             .height(height)
-            .shadow(if (isPressed) 0.dp else elevation, shape)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = surfaceCategory,
+                rowIndex = surfaceRowIndex,
+                isBottomRow = isBottomRow,
+                onTap = { onClickState.value() }
+            )
+            .shadow(elevation, shape)
             .clip(shape)
             .drawBehind {
                 val rimHeight = 2.dp.toPx()
@@ -4815,15 +5034,28 @@ fun RowScope.SpecialKeyButton(
             }
             .background(bg)
             .border(width = theme.borderWidthDp.dp, color = borderClr, shape = shape)
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown()
-                    isPressed = true
-                    waitForUpOrCancellation()
-                    isPressed = false
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                onClick {
+                    onClickState.value()
+                    true
                 }
             }
-            .clickable { onClick() },
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            localPressed = true
+                            val up = waitForUpOrCancellation()
+                            localPressed = false
+                            if (up != null && up.id == down.id && !up.isConsumed) {
+                                onClickState.value()
+                            }
+                        }
+                    }
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -4849,19 +5081,45 @@ fun RowScope.RepeatableSpecialKeyButton(
     cornerRadius: Dp,
     elevation: Dp,
     modifier: Modifier = Modifier,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 3,
     onClick: () -> Unit,
     onSwipeLeft: (() -> Unit)? = null
 ) {
-    var isPressed by remember { mutableStateOf(false) }
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
     val shape = RoundedCornerShape(cornerRadius)
     val coroutineScope = rememberCoroutineScope()
     val onClickState = rememberUpdatedState(onClick)
     val onSwipeLeftState = rememberUpdatedState(onSwipeLeft)
+    val swipeLeftCallback: (() -> Unit)? = if (onSwipeLeft != null) {
+        { onSwipeLeftState.value?.invoke() }
+    } else null
+
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        onTap = { onClickState.value() },
+        onSwipeLeft = swipeLeftCallback
+    )
 
     Box(
         modifier = modifier
             .weight(weight)
             .height(height)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = KeyHitCategory.BACKSPACE,
+                rowIndex = surfaceRowIndex,
+                onTap = { onClickState.value() },
+                onSwipeLeft = swipeLeftCallback
+            )
             .shadow(if (isPressed) 0.dp else elevation, shape)
             .clip(shape)
             .drawBehind {
@@ -4882,47 +5140,58 @@ fun RowScope.RepeatableSpecialKeyButton(
                 color = Color(theme.specialKeyBorderColor),
                 shape = shape
             )
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    isPressed = true
-
-                    // 1. Single tap executes IMMEDIATELY on touch down!
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                onClick {
                     onClickState.value()
-
-                    var dragX = 0f
-                    var hasSwiped = false
-
-                    // 2. Launch auto-repeat if held beyond threshold
-                    val repeatJob = coroutineScope.launch {
-                        delay(380)
-                        while (isActive && !hasSwiped) {
-                            onClickState.value()
-                            delay(55)
-                        }
-                    }
-
-                    // 3. Track horizontal swipe gesture
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: break
-                        if (!change.pressed) {
-                            break
-                        }
-                        val delta = change.position.x - change.previousPosition.x
-                        dragX += delta
-                        if (dragX < -45f && onSwipeLeftState.value != null && !hasSwiped) {
-                            hasSwiped = true
-                            repeatJob.cancel()
-                            onSwipeLeftState.value?.invoke()
-                            dragX = 0f
-                        }
-                    }
-
-                    repeatJob.cancel()
-                    isPressed = false
+                    true
                 }
-            },
+            }
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            localPressed = true
+
+                            // 1. Single tap executes IMMEDIATELY on touch down!
+                            onClickState.value()
+
+                            var dragX = 0f
+                            var hasSwiped = false
+
+                            // 2. Launch auto-repeat if held beyond threshold
+                            val repeatJob = coroutineScope.launch {
+                                delay(380)
+                                while (isActive && !hasSwiped) {
+                                    onClickState.value()
+                                    delay(55)
+                                }
+                            }
+
+                            // 3. Track horizontal swipe gesture
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                if (!change.pressed) {
+                                    break
+                                }
+                                val delta = change.position.x - change.previousPosition.x
+                                dragX += delta
+                                if (dragX < -45f && onSwipeLeftState.value != null && !hasSwiped) {
+                                    hasSwiped = true
+                                    repeatJob.cancel()
+                                    onSwipeLeftState.value?.invoke()
+                                    dragX = 0f
+                                }
+                            }
+
+                            repeatJob.cancel()
+                            localPressed = false
+                        }
+                    }
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -4944,13 +5213,22 @@ private fun RowScope.SymbolDockTriggerTextButton(
     theme: KeyboardTheme,
     cornerRadius: Dp,
     elevation: Dp,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 4,
+    isBottomRow: Boolean = true,
     onTap: () -> Unit,
     onLongPressStart: () -> Unit,
     onDragRoot: (Offset) -> Unit,
     onRelease: () -> Unit,
     onCancel: () -> Unit
 ) {
-    var isPressed by remember { mutableStateOf(false) }
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
     var buttonCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val shape = RoundedCornerShape(cornerRadius)
     val scope = rememberCoroutineScope()
@@ -4961,10 +5239,26 @@ private fun RowScope.SymbolDockTriggerTextButton(
     val onReleaseState = rememberUpdatedState(onRelease)
     val onCancelState = rememberUpdatedState(onCancel)
 
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        onTap = { onTapState.value() },
+        onLongPress = { onLongPressStartState.value() }
+    )
+
     Box(
         modifier = Modifier
             .weight(weight)
             .height(height)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = KeyHitCategory.SYMBOL_MODE,
+                rowIndex = surfaceRowIndex,
+                isBottomRow = isBottomRow,
+                onTap = { onTapState.value() },
+                onLongPress = { onLongPressStartState.value() }
+            )
             .shadow(if (isPressed) 0.dp else elevation, shape)
             .clip(shape)
             .drawBehind {
@@ -4985,7 +5279,7 @@ private fun RowScope.SymbolDockTriggerTextButton(
                 color = Color(theme.specialKeyBorderColor),
                 shape = shape
             )
-            .onGloballyPositioned { buttonCoords = it }
+            .then(if (surfaceState == null) Modifier.onGloballyPositioned { buttonCoords = it } else Modifier)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 contentDescription = "Symbols. Tap for symbols or hold and drag for quick symbol dock."
@@ -4994,65 +5288,69 @@ private fun RowScope.SymbolDockTriggerTextButton(
                     true
                 }
             }
-            .pointerInput(Unit) {
-                val slop = viewConfiguration.touchSlop
-                val longPressMs = viewConfiguration.longPressTimeoutMillis
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val activePointerId = down.id
-                    val downPos = down.position
-                    isPressed = true
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        val slop = viewConfiguration.touchSlop
+                        val longPressMs = viewConfiguration.longPressTimeoutMillis
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val activePointerId = down.id
+                            val downPos = down.position
+                            localPressed = true
 
-                    var dockOpened = false
-                    var gestureCancelled = false
-                    var movedBeforeLongPress = false
+                            var dockOpened = false
+                            var gestureCancelled = false
+                            var movedBeforeLongPress = false
 
-                    val longPressJob = scope.launch {
-                        delay(longPressMs)
-                        if (!gestureCancelled && !movedBeforeLongPress) {
-                            dockOpened = true
-                            onLongPressStartState.value()
+                            val longPressJob = scope.launch {
+                                delay(longPressMs)
+                                if (!gestureCancelled && !movedBeforeLongPress) {
+                                    dockOpened = true
+                                    onLongPressStartState.value()
+                                }
+                            }
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.count { it.pressed } > 1) {
+                                    gestureCancelled = true
+                                    longPressJob.cancel()
+                                    if (dockOpened) onCancelState.value()
+                                    break
+                                }
+                                val change = event.changes.firstOrNull { it.id == activePointerId }
+                                    ?: event.changes.firstOrNull()
+                                    ?: break
+                                if (!change.pressed) {
+                                    longPressJob.cancel()
+                                    if (dockOpened) {
+                                        onReleaseState.value()
+                                    } else if (!gestureCancelled && !movedBeforeLongPress) {
+                                        onTapState.value()
+                                    }
+                                    break
+                                }
+                                val distFromDown = (change.position - downPos).getDistance()
+                                if (!dockOpened) {
+                                    if (distFromDown > slop) {
+                                        movedBeforeLongPress = true
+                                        longPressJob.cancel()
+                                    }
+                                } else {
+                                    change.consume()
+                                    val rootPos = buttonCoords?.let { coords ->
+                                        if (coords.isAttached) coords.localToRoot(change.position) else null
+                                    }
+                                    if (rootPos != null) onDragRootState.value(rootPos)
+                                }
+                            }
+                            longPressJob.cancel()
+                            localPressed = false
                         }
                     }
-
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.changes.count { it.pressed } > 1) {
-                            gestureCancelled = true
-                            longPressJob.cancel()
-                            if (dockOpened) onCancelState.value()
-                            break
-                        }
-                        val change = event.changes.firstOrNull { it.id == activePointerId }
-                            ?: event.changes.firstOrNull()
-                            ?: break
-                        if (!change.pressed) {
-                            longPressJob.cancel()
-                            if (dockOpened) {
-                                onReleaseState.value()
-                            } else if (!gestureCancelled && !movedBeforeLongPress) {
-                                onTapState.value()
-                            }
-                            break
-                        }
-                        val distFromDown = (change.position - downPos).getDistance()
-                        if (!dockOpened) {
-                            if (distFromDown > slop) {
-                                movedBeforeLongPress = true
-                                longPressJob.cancel()
-                            }
-                        } else {
-                            change.consume()
-                            val rootPos = buttonCoords?.let { coords ->
-                                if (coords.isAttached) coords.localToRoot(change.position) else null
-                            }
-                            if (rootPos != null) onDragRootState.value(rootPos)
-                        }
-                    }
-                    longPressJob.cancel()
-                    isPressed = false
-                }
-            }
+                } else Modifier
+            )
             .testTag("btn_symbol_key"),
         contentAlignment = Alignment.Center
     ) {
@@ -5074,7 +5372,7 @@ private fun RowScope.SymbolDockTriggerTextButton(
 }
 
 /**
- * Text-based Functional Key Button (?123, =\\<, ABC)
+ * Text-based Functional Key Button (?123, =\<, ABC)
  */
 @Composable
 fun RowScope.SpecialKeyTextButton(
@@ -5084,16 +5382,40 @@ fun RowScope.SpecialKeyTextButton(
     theme: KeyboardTheme,
     cornerRadius: Dp,
     elevation: Dp,
+    surfaceState: KeyboardSurfaceTouchState? = null,
+    surfaceKeyId: String? = null,
+    surfaceRowIndex: Int = 3,
+    isBottomRow: Boolean = false,
     onClick: () -> Unit
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(cornerRadius)
+    var localPressed by remember { mutableStateOf(false) }
+    val isPressed = if (surfaceState != null && surfaceKeyId != null) {
+        surfaceState.isPressed(surfaceKeyId)
+    } else {
+        localPressed
+    }
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val onClickState = rememberUpdatedState(onClick)
+
+    SurfaceKeyRegistration(
+        surfaceState = surfaceState,
+        keyId = surfaceKeyId,
+        onTap = { onClickState.value() }
+    )
 
     Box(
         modifier = Modifier
             .weight(weight)
             .height(height)
-            .shadow(if (isPressed) 0.dp else elevation, shape)
+            .registerSurfaceBounds(
+                surfaceState = surfaceState,
+                keyId = surfaceKeyId,
+                category = KeyHitCategory.SYMBOL_MODE,
+                rowIndex = surfaceRowIndex,
+                isBottomRow = isBottomRow,
+                onTap = { onClickState.value() }
+            )
+            .shadow(elevation, shape)
             .clip(shape)
             .drawBehind {
                 val rimHeight = 2.dp.toPx()
@@ -5113,15 +5435,28 @@ fun RowScope.SpecialKeyTextButton(
                 color = Color(theme.specialKeyBorderColor),
                 shape = shape
             )
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown()
-                    isPressed = true
-                    waitForUpOrCancellation()
-                    isPressed = false
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                onClick {
+                    onClickState.value()
+                    true
                 }
             }
-            .clickable { onClick() },
+            .then(
+                if (surfaceState == null) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            localPressed = true
+                            val up = waitForUpOrCancellation()
+                            localPressed = false
+                            if (up != null && up.id == down.id && !up.isConsumed) {
+                                onClickState.value()
+                            }
+                        }
+                    }
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -5140,4 +5475,5 @@ fun RowScope.SpecialKeyTextButton(
         )
     }
 }
+
 

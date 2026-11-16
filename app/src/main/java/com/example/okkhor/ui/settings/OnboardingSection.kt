@@ -5,6 +5,7 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,11 +51,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +82,7 @@ fun OnboardingSection(
     settings: KeyboardSettings,
     activeTheme: KeyboardTheme,
     onNavigateToTab: (Int) -> Unit = {},
+    onOpenPerfLab: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -128,27 +131,16 @@ fun OnboardingSection(
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Gold artisan "অ" avatar badge
-                Box(
+                // Okkhor Matra Keys Brand Icon
+                Image(
+                    painter = painterResource(id = R.drawable.ic_okkhor_brand_icon),
+                    contentDescription = stringResource(R.string.app_name),
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(56.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFFE5A96A), Color(0xFFD49A4B))
-                            )
-                        )
-                        .border(1.5.dp, Color(0xFFFFD49F), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "অ",
-                        color = Color(0xFF14171A),
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = HindSiliguri
-                    )
-                }
+                        .clip(RoundedCornerShape(16.dp))
+                        .testTag("home_brand_icon")
+                )
 
                 Spacer(modifier = Modifier.width(16.dp))
 
@@ -226,6 +218,46 @@ fun OnboardingSection(
                 modifier = Modifier.weight(1f),
                 onClick = { onNavigateToTab(4) }
             )
+        }
+
+        // Performance Lab Launch Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { onOpenPerfLab() }
+                .testTag("btn_open_perf_lab"),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1D24)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5A96A).copy(alpha = 0.45f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Speed,
+                    contentDescription = stringResource(R.string.perf_lab_title),
+                    tint = Color(0xFFE5A96A),
+                    modifier = Modifier.size(26.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.perf_lab_title),
+                        color = Color(0xFFF9FAFB),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.perf_lab_subtitle),
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.5.sp
+                    )
+                }
+            }
         }
 
         // --- 3. Avro Rules & Cheatsheet Expandable Panel ---

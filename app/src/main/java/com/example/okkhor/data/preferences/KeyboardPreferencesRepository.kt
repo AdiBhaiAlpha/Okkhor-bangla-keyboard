@@ -107,6 +107,8 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
             showNumberRow = prefs.getBoolean(KEY_SHOW_NUMBER_ROW, true),
             showSuggestions = prefs.getBoolean(KEY_SHOW_SUGGESTIONS, true),
             autoCorrect = prefs.getBoolean(KEY_AUTOCORRECT, false),
+            nextWordPredictionEnabled = prefs.getBoolean(KEY_NEXT_WORD_PREDICTION, true),
+            keySpacingDpOverride = prefs.getFloat(KEY_SPACING_OVERRIDE_DP, 4.5f).coerceIn(2.0f, 8.0f),
             hapticFeedback = prefs.getBoolean(KEY_HAPTIC, true),
             soundFeedback = prefs.getBoolean(KEY_SOUND, true),
             keyPopupPreview = prefs.getBoolean(KEY_KEY_POPUP, true),
@@ -162,6 +164,7 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
         val updated = rawUpdated.copy(
             keyboardHeightPercent = rawUpdated.keyboardHeightPercent.coerceIn(75, 140),
             keyboardWidthPercent = rawUpdated.keyboardWidthPercent.coerceIn(75, 100),
+            keySpacingDpOverride = rawUpdated.keySpacingDpOverride.coerceIn(2.0f, 8.0f),
             recentEmojiDockCount = rawUpdated.recentEmojiDockCount.coerceIn(4, 12),
             hapticIntensityPercent = rawUpdated.hapticIntensityPercent.coerceIn(10, 100),
             floatingOffsetX = rawUpdated.floatingOffsetX.coerceIn(-120f, 120f),
@@ -177,6 +180,8 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
             putBoolean(KEY_SHOW_NUMBER_ROW, updated.showNumberRow)
             putBoolean(KEY_SHOW_SUGGESTIONS, updated.showSuggestions)
             putBoolean(KEY_AUTOCORRECT, updated.autoCorrect)
+            putBoolean(KEY_NEXT_WORD_PREDICTION, updated.nextWordPredictionEnabled)
+            putFloat(KEY_SPACING_OVERRIDE_DP, updated.keySpacingDpOverride)
             putBoolean(KEY_HAPTIC, updated.hapticFeedback)
             putBoolean(KEY_SOUND, updated.soundFeedback)
             putBoolean(KEY_KEY_POPUP, updated.keyPopupPreview)
@@ -616,6 +621,8 @@ class KeyboardPreferencesRepository private constructor(context: Context) {
         private const val KEY_SHOW_NUMBER_ROW = "pref_show_number_row"
         private const val KEY_SHOW_SUGGESTIONS = "pref_show_suggestions"
         private const val KEY_AUTOCORRECT = "pref_autocorrect"
+        private const val KEY_NEXT_WORD_PREDICTION = "pref_next_word_prediction"
+        private const val KEY_SPACING_OVERRIDE_DP = "pref_key_spacing_override_dp"
         private const val KEY_HAPTIC = "pref_haptic"
         private const val KEY_SOUND = "pref_sound"
         private const val KEY_KEY_POPUP = "pref_key_popup"

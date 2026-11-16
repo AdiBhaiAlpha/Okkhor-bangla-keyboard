@@ -158,7 +158,10 @@ object KeyboardGestureHelper {
         }
 
         var bestMatch: String? = null
-        var bestDist = Float.MAX_VALUE
+        var bestRectDist = Float.MAX_VALUE
+        var bestCenterDist = Float.MAX_VALUE
+        val tieThreshold = 1.5f
+
         for ((key, rect) in itemBounds) {
             if (viewportBounds != null) {
                 val visibleLeft = maxOf(rect.left, viewportBounds.left)
@@ -172,9 +175,22 @@ object KeyboardGestureHelper {
                 bottom = rect.bottom + verticalTolerancePx
             )
             if (expandedRect.contains(pointerRoot)) {
-                val dist = abs(pointerRoot.x - rect.center.x) + abs(pointerRoot.y - rect.center.y) * 0.5f
-                if (dist < bestDist) {
-                    bestDist = dist
+                val dxRect = maxOf(0f, maxOf(rect.left - pointerRoot.x, pointerRoot.x - rect.right))
+                val dyRect = maxOf(0f, maxOf(rect.top - pointerRoot.y, pointerRoot.y - rect.bottom))
+                val rectDist = kotlin.math.hypot(dxRect, dyRect)
+                val centerDist = kotlin.math.hypot(
+                    pointerRoot.x - rect.center.x,
+                    pointerRoot.y - rect.center.y
+                )
+                val isBetter = when {
+                    bestMatch == null -> true
+                    rectDist < bestRectDist - tieThreshold -> true
+                    abs(rectDist - bestRectDist) <= tieThreshold -> centerDist < bestCenterDist
+                    else -> false
+                }
+                if (isBetter) {
+                    bestRectDist = rectDist
+                    bestCenterDist = centerDist
                     bestMatch = key
                 }
             }

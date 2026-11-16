@@ -43,6 +43,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.MainActivity
 import com.example.R
+import com.example.okkhor.benchmark.TypingPerformanceTracker
 import com.example.okkhor.data.model.InputMode
 import com.example.okkhor.data.model.KeyboardTheme
 import com.example.okkhor.data.preferences.KeyboardPreferencesRepository
@@ -113,7 +114,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     internal var isShifted by mutableStateOf(false)
     internal var isCapsLock by mutableStateOf(false)
     private var lastShiftPressTime = 0L
-    private var candidates by mutableStateOf<List<String>>(emptyList())
+    internal var candidates by mutableStateOf<List<String>>(emptyList())
     private var activeComposition = StringBuilder()
     private var isPasswordField = false
     private var lastCommittedWord = ""
@@ -146,6 +147,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         prefsRepo = KeyboardPreferencesRepository.getInstance(applicationContext)
+        TypingPerformanceTracker.init(applicationContext)
         smartMemory = SmartWordMemory.getInstance(applicationContext)
         suggestionEngine = SuggestionEngine(phoneticEngine, smartMemory)
         emojiRepository = UnicodeEmojiRepository.getInstance(applicationContext)
@@ -166,7 +168,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             }
             val commitText = "$spokenText "
             ic.commitText(commitText, 1)
-            lastCommittedWord = spokenText.split("\\s+".toRegex()).lastOrNull().orEmpty()
+            lastCommittedWord = spokenText.split(WHITESPACE_REGEX).lastOrNull().orEmpty()
             recordOperation(insertedText = commitText, replacedText = "")
         }
 
@@ -467,7 +469,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                 currentSelEnd = extracted.selectionEnd
                 hasSelectionState = currentSelStart != currentSelEnd
             } else {
-                hasSelectionState = currentSelStart >= 0 && currentSelEnd >= 0 && currentSelStart != currentSelEnd
+                hasSelectionState = false
             }
         }
     }
@@ -723,7 +725,11 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         clearLocalComposition()
         currentSelStart = effectiveInfo?.initialSelStart ?: -1
         currentSelEnd = effectiveInfo?.initialSelEnd ?: -1
-        refreshSelectionState(activeInputConnection())
+        if (currentSelStart >= 0 && currentSelEnd >= 0 && currentSelStart == currentSelEnd) {
+            hasSelectionState = false
+        } else {
+            refreshSelectionState(activeInputConnection())
+        }
 
         inputSessionKey++
 
@@ -737,6 +743,10 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         voiceController.stopListening()
+        if (::smartMemory.isInitialized) {
+            smartMemory.flushPendingSaves()
+        }
+        TypingPerformanceTracker.persistLiveImeSnapshot()
         if (activeComposition.isNotEmpty()) {
             resetComposition()
         } else {
@@ -745,6 +755,8 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         clearEditHistory()
         isSelectionMode = false
         selectionAnchor = -1
+        currentSelStart = -1
+        currentSelEnd = -1
         hasSelectionState = false
         isShifted = false
         isCapsLock = false
@@ -952,23 +964,11 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     private fun getActiveComposingCommitText(): String {
         val raw = activeComposition.toString()
         if (raw.isEmpty()) return ""
-        return when (currentMode) {
-            InputMode.BANGLA_PHONETIC -> {
-                if (prefsRepo.settings.value.autoCorrect && candidates.isNotEmpty()) {
-                    candidates.first()
-                } else {
-                    phoneticEngine.transliterate(raw)
-                }
-            }
-            InputMode.ENGLISH -> {
-                if (prefsRepo.settings.value.autoCorrect && candidates.size > 1) {
-                    candidates[1]
-                } else {
-                    raw
-                }
-            }
-            else -> raw
-        }
+        return suggestionEngine.resolveCommitText(
+            rawInput = raw,
+            mode = currentMode,
+            settings = prefsRepo.settings.value
+        )
     }
 
     internal fun handleEmojiSelected(baseUnicode: String, insertedUnicode: String) {
@@ -1121,31 +1121,50 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     }
 
     internal fun handleKeyPress(key: String) {
+        val startNs = System.nanoTime()
         val ic = activeInputConnection() ?: return
+        val settings = prefsRepo.settings.value
+        val (gridRow, gridCol) = qwertyGridPos(key)
 
-        // If user has an active selection and types a printable key outside composition, track replaced selection cleanly
-        val selectedBefore = if (activeComposition.isEmpty()) getCurrentSelectedText(ic)?.toString().orEmpty() else ""
+        // Only query selected text via IPC when a selection actually exists
+        val selectedBefore = if (activeComposition.isEmpty() && hasSelectionState) {
+            getCurrentSelectedText(ic)?.toString().orEmpty()
+        } else {
+            ""
+        }
 
         // If Shift Lock / Caps Lock is ON in non-English mode (e.g. Bangla Phonetic), commit uppercase English/acronyms directly
         if (isCapsLock && currentMode != InputMode.ENGLISH) {
             if (activeComposition.isNotEmpty()) {
-                val transliterated = phoneticEngine.transliterate(activeComposition.toString())
                 val raw = activeComposition.toString()
+                val convStartNs = System.nanoTime()
+                val transliterated = phoneticEngine.transliterate(raw)
+                TypingPerformanceTracker.recordBanglaConversion(System.nanoTime() - convStartNs, isPasswordField)
                 smartMemory.recordCorrection(raw, transliterated)
                 smartMemory.recordWordUsage(transliterated)
                 ic.commitText(transliterated, 1)
+                TypingPerformanceTracker.recordWordCommitted(viaSuggestion = false, isSensitiveField = isPasswordField)
                 lastCommittedWord = transliterated
                 recordOperation(insertedText = transliterated, replacedText = "")
                 resetComposition()
             }
             val upperKey = key.uppercase()
             ic.commitText(upperKey, 1)
+            TypingPerformanceTracker.recordKeyCommit(
+                mode = currentMode,
+                latencyNs = System.nanoTime() - startNs,
+                enteredChars = upperKey.length,
+                enteredGraphemes = upperKey.length,
+                isSensitiveField = isPasswordField,
+                qwertyRow = gridRow,
+                qwertyCol = gridCol
+            )
             recordOperation(insertedText = upperKey, replacedText = selectedBefore)
             hasSelectionState = false
             isSelectionMode = false
             selectionAnchor = -1
             lastCommittedWord = (lastCommittedWord + upperKey).takeLast(10)
-            if (prefsRepo.settings.value.showSuggestions) {
+            if (settings.showSuggestions && !isPasswordField) {
                 candidates = if (lastCommittedWord.equals("OK", ignoreCase = true)) {
                     listOf("OK", "ওকে", "ঠিক আছে")
                 } else {
@@ -1159,17 +1178,32 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             // Check if key is a letter/char that participates in phonetic transliteration
             if (key.length == 1 && (key[0] in 'a'..'z' || key[0] in 'A'..'Z' || key == "^" || key == "`" || key == "'" || key == "," || key == ":" || key == "|")) {
                 activeComposition.append(key)
-                val transliterated = phoneticEngine.transliterate(activeComposition.toString())
+                val raw = activeComposition.toString()
+                val convStartNs = System.nanoTime()
+                val transliterated = phoneticEngine.transliterate(raw)
+                TypingPerformanceTracker.recordBanglaConversion(System.nanoTime() - convStartNs, isPasswordField)
+
                 ic.setComposingText(transliterated, 1)
+                TypingPerformanceTracker.recordKeyCommit(
+                    mode = currentMode,
+                    latencyNs = System.nanoTime() - startNs,
+                    enteredChars = 1,
+                    enteredGraphemes = 1,
+                    isSensitiveField = isPasswordField,
+                    qwertyRow = gridRow,
+                    qwertyCol = gridCol
+                )
                 hasSelectionState = false
                 isSelectionMode = false
                 selectionAnchor = -1
 
-                if (prefsRepo.settings.value.showSuggestions) {
+                if (settings.showSuggestions) {
                     candidates = suggestionEngine.getSuggestions(
-                        activeComposition.toString(),
-                        currentMode,
-                        lastCommittedWord = lastCommittedWord
+                        input = raw,
+                        mode = currentMode,
+                        lastCommittedWord = lastCommittedWord,
+                        precomputedTransliterated = transliterated,
+                        nextWordPredictionEnabled = settings.nextWordPredictionEnabled
                     )
                 }
 
@@ -1181,36 +1215,65 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             } else {
                 // Non-phonetic key, commit any active composition first
                 if (activeComposition.isNotEmpty()) {
-                    val transliterated = phoneticEngine.transliterate(activeComposition.toString())
                     val raw = activeComposition.toString()
-                    smartMemory.recordCorrection(raw, transliterated)
+                    val convStartNs = System.nanoTime()
+                    val transliterated = phoneticEngine.transliterate(raw)
+                    TypingPerformanceTracker.recordBanglaConversion(System.nanoTime() - convStartNs, isPasswordField)
+                    val wordToCommit = suggestionEngine.resolveCommitText(raw, currentMode, settings, transliterated)
+                    smartMemory.recordCorrection(raw, wordToCommit)
                     if (lastCommittedWord.isNotEmpty()) {
-                        smartMemory.recordNextWord(lastCommittedWord, transliterated)
+                        smartMemory.recordNextWord(lastCommittedWord, wordToCommit)
                     }
-                    smartMemory.recordWordUsage(transliterated)
+                    smartMemory.recordWordUsage(wordToCommit)
 
-                    ic.commitText(transliterated, 1)
-                    lastCommittedWord = transliterated
-                    recordOperation(insertedText = transliterated, replacedText = "")
+                    ic.beginBatchEdit()
+                    ic.commitText(wordToCommit, 1)
+                    ic.commitText(key, 1)
+                    ic.endBatchEdit()
+
+                    TypingPerformanceTracker.recordWordCommitted(viaSuggestion = false, isSensitiveField = isPasswordField)
+                    lastCommittedWord = wordToCommit
+                    recordOperation(insertedText = "$wordToCommit$key", replacedText = selectedBefore)
                     resetComposition()
+                } else {
+                    ic.commitText(key, 1)
+                    recordOperation(insertedText = key, replacedText = selectedBefore)
                 }
-                ic.commitText(key, 1)
-                recordOperation(insertedText = key, replacedText = selectedBefore)
+                TypingPerformanceTracker.recordKeyCommit(
+                    mode = currentMode,
+                    latencyNs = System.nanoTime() - startNs,
+                    enteredChars = key.length,
+                    enteredGraphemes = if (currentMode.isBangla) BanglaUnicodeHelper.countGraphemeClusters(key) else key.length,
+                    isSensitiveField = isPasswordField,
+                    qwertyRow = gridRow,
+                    qwertyCol = gridCol
+                )
             }
         } else if (currentMode == InputMode.ENGLISH && !isPasswordField) {
             val effectiveKey = if (isCapsLock) key.uppercase() else key
             if (effectiveKey.length == 1 && (effectiveKey[0] in 'a'..'z' || effectiveKey[0] in 'A'..'Z' || effectiveKey == "'")) {
                 activeComposition.append(effectiveKey)
-                ic.setComposingText(activeComposition.toString(), 1)
+                val raw = activeComposition.toString()
+                ic.setComposingText(raw, 1)
+                TypingPerformanceTracker.recordKeyCommit(
+                    mode = currentMode,
+                    latencyNs = System.nanoTime() - startNs,
+                    enteredChars = 1,
+                    enteredGraphemes = 1,
+                    isSensitiveField = isPasswordField,
+                    qwertyRow = gridRow,
+                    qwertyCol = gridCol
+                )
                 hasSelectionState = false
                 isSelectionMode = false
                 selectionAnchor = -1
 
-                if (prefsRepo.settings.value.showSuggestions) {
+                if (settings.showSuggestions) {
                     candidates = suggestionEngine.getSuggestions(
-                        activeComposition.toString(),
-                        InputMode.ENGLISH,
-                        lastCommittedWord = lastCommittedWord
+                        input = raw,
+                        mode = InputMode.ENGLISH,
+                        lastCommittedWord = lastCommittedWord,
+                        nextWordPredictionEnabled = settings.nextWordPredictionEnabled
                     )
                 }
 
@@ -1221,21 +1284,34 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             } else {
                 // Punctuation, digit, or emoji typed in English mode
                 if (activeComposition.isNotEmpty()) {
-                    val word = activeComposition.toString()
+                    val word = suggestionEngine.resolveCommitText(activeComposition.toString(), InputMode.ENGLISH, settings)
                     smartMemory.recordWordUsage(word)
                     if (lastCommittedWord.isNotBlank()) {
                         smartMemory.recordNextWord(lastCommittedWord, word)
                     }
+                    ic.beginBatchEdit()
                     ic.commitText(word, 1)
+                    ic.commitText(effectiveKey, 1)
+                    ic.endBatchEdit()
+                    TypingPerformanceTracker.recordWordCommitted(viaSuggestion = false, isSensitiveField = isPasswordField)
                     lastCommittedWord = word
-                    recordOperation(insertedText = word, replacedText = "")
+                    recordOperation(insertedText = "$word$effectiveKey", replacedText = selectedBefore)
                     resetComposition()
+                } else {
+                    ic.commitText(effectiveKey, 1)
+                    recordOperation(insertedText = effectiveKey, replacedText = selectedBefore)
                 }
-                ic.commitText(effectiveKey, 1)
-                recordOperation(insertedText = effectiveKey, replacedText = selectedBefore)
+                TypingPerformanceTracker.recordKeyCommit(
+                    mode = currentMode,
+                    latencyNs = System.nanoTime() - startNs,
+                    enteredChars = effectiveKey.length,
+                    enteredGraphemes = effectiveKey.length,
+                    isSensitiveField = isPasswordField,
+                    qwertyRow = gridRow,
+                    qwertyCol = gridCol
+                )
                 if (effectiveKey == " ") {
                     checkShortcutExpansion()
-                    learnSurroundingWords(ic)
                     updateAutoCapitalization()
                 }
             }
@@ -1244,6 +1320,15 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             resetComposition()
             val effectiveKey = if (isCapsLock && currentMode == InputMode.ENGLISH) key.uppercase() else key
             ic.commitText(effectiveKey, 1)
+            TypingPerformanceTracker.recordKeyCommit(
+                mode = currentMode,
+                latencyNs = System.nanoTime() - startNs,
+                enteredChars = effectiveKey.length,
+                enteredGraphemes = if (currentMode.isBangla && !isPasswordField) BanglaUnicodeHelper.countGraphemeClusters(effectiveKey) else effectiveKey.length,
+                isSensitiveField = isPasswordField,
+                qwertyRow = gridRow,
+                qwertyCol = gridCol
+            )
             recordOperation(insertedText = effectiveKey, replacedText = selectedBefore)
 
             // Check shortcuts expansion on space
@@ -1263,7 +1348,9 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     }
 
     internal fun handleActionKey(code: Int) {
+        val actionStartNs = System.nanoTime()
         val ic = activeInputConnection() ?: return
+        val settings = prefsRepo.settings.value
 
         when (code) {
             KeyboardLayouts.CODE_SHIFT -> {
@@ -1287,8 +1374,26 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             }
 
             KeyboardLayouts.CODE_DELETE -> {
-                val selectedText = getCurrentSelectedText(ic)
-                val hasActiveSelection = hasSelectionState || !selectedText.isNullOrEmpty()
+                val selectedText = if (activeComposition.isEmpty() || hasSelectionState) {
+                    getCurrentSelectedText(ic)
+                } else {
+                    null
+                }
+                val extractedSelectionActive = if (selectedText.isNullOrEmpty() && hasSelectionState) {
+                    val extracted = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
+                    extracted != null &&
+                        extracted.selectionStart >= 0 &&
+                        extracted.selectionEnd >= 0 &&
+                        extracted.selectionStart != extracted.selectionEnd
+                } else {
+                    false
+                }
+                val hasActiveSelection = !selectedText.isNullOrEmpty() || extractedSelectionActive
+                if (!hasActiveSelection && hasSelectionState) {
+                    hasSelectionState = false
+                    isSelectionMode = false
+                    selectionAnchor = -1
+                }
 
                 if (hasActiveSelection) {
                     val removedStr = selectedText?.toString().orEmpty()
@@ -1317,34 +1422,50 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                     selectionAnchor = -1
                     refreshSelectionState(ic)
                     updateAutoCapitalization()
+                    TypingPerformanceTracker.recordBackspace(currentMode, System.nanoTime() - actionStartNs, isPasswordField)
                     return
                 }
 
                 if (activeComposition.isNotEmpty()) {
                     activeComposition.deleteCharAt(activeComposition.length - 1)
                     if (activeComposition.isEmpty()) {
+                        ic.beginBatchEdit()
+                        ic.setComposingText("", 1)
                         ic.finishComposingText()
-                        candidates = if (prefsRepo.settings.value.showSuggestions && !isPasswordField) {
-                            suggestionEngine.getSuggestions("", currentMode, lastCommittedWord = lastCommittedWord)
+                        ic.endBatchEdit()
+                        candidates = if (settings.showSuggestions && !isPasswordField) {
+                            suggestionEngine.getSuggestions(
+                                input = "",
+                                mode = currentMode,
+                                lastCommittedWord = lastCommittedWord,
+                                nextWordPredictionEnabled = settings.nextWordPredictionEnabled
+                            )
                         } else {
                             emptyList()
                         }
                         updateAutoCapitalization()
                     } else {
+                        val raw = activeComposition.toString()
                         val composingDisplay = if (currentMode == InputMode.BANGLA_PHONETIC) {
-                            phoneticEngine.transliterate(activeComposition.toString())
+                            val convStartNs = System.nanoTime()
+                            val res = phoneticEngine.transliterate(raw)
+                            TypingPerformanceTracker.recordBanglaConversion(System.nanoTime() - convStartNs, isPasswordField)
+                            res
                         } else {
-                            activeComposition.toString()
+                            raw
                         }
                         ic.setComposingText(composingDisplay, 1)
-                        if (prefsRepo.settings.value.showSuggestions) {
+                        if (settings.showSuggestions) {
                             candidates = suggestionEngine.getSuggestions(
-                                activeComposition.toString(),
-                                currentMode,
-                                lastCommittedWord = lastCommittedWord
+                                input = raw,
+                                mode = currentMode,
+                                lastCommittedWord = lastCommittedWord,
+                                precomputedTransliterated = if (currentMode == InputMode.BANGLA_PHONETIC) composingDisplay else null,
+                                nextWordPredictionEnabled = settings.nextWordPredictionEnabled
                             )
                         }
                     }
+                    TypingPerformanceTracker.recordBackspace(currentMode, System.nanoTime() - actionStartNs, isPasswordField)
                 } else {
                     val before = ic.getTextBeforeCursor(24, 0)
                     val len = BanglaUnicodeHelper.calculateBackspaceLength(before ?: "")
@@ -1358,20 +1479,36 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
                         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
                     }
-                    refreshSelectionState(ic)
+                    TypingPerformanceTracker.recordBackspace(currentMode, System.nanoTime() - actionStartNs, isPasswordField)
+                    if (hasSelectionState) {
+                        refreshSelectionState(ic)
+                    }
                     updateAutoCapitalization()
                 }
             }
 
             KeyboardLayouts.CODE_SPACE -> {
                 val now = System.currentTimeMillis()
-                val selectedBefore = if (activeComposition.isEmpty()) getCurrentSelectedText(ic)?.toString().orEmpty() else ""
+                val selectedBefore = if (activeComposition.isEmpty() && hasSelectionState) {
+                    getCurrentSelectedText(ic)?.toString().orEmpty()
+                } else {
+                    ""
+                }
 
                 // Smart double-space for period/Dari
-                if (prefsRepo.settings.value.smartDoubleSpacePeriod && activeComposition.isEmpty() && selectedBefore.isEmpty() && now - lastSpaceTimestamp < 450) {
+                if (settings.smartDoubleSpacePeriod && activeComposition.isEmpty() && selectedBefore.isEmpty() && now - lastSpaceTimestamp < 450) {
                     val punct = if (currentMode.isBangla) "। " else ". "
+                    ic.beginBatchEdit()
                     ic.deleteSurroundingText(1, 0)
                     ic.commitText(punct, 1)
+                    ic.endBatchEdit()
+                    TypingPerformanceTracker.recordKeyCommit(
+                        mode = currentMode,
+                        latencyNs = System.nanoTime() - actionStartNs,
+                        enteredChars = punct.length,
+                        enteredGraphemes = punct.length,
+                        isSensitiveField = isPasswordField
+                    )
                     recordOperation(insertedText = punct, replacedText = " ")
                     lastSpaceTimestamp = 0
                     updateAutoCapitalization()
@@ -1380,15 +1517,23 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                 lastSpaceTimestamp = now
 
                 var committedForUndo: Pair<String, String>? = null
-                if (activeComposition.isNotEmpty()) {
+                val hadComposition = activeComposition.isNotEmpty()
+                if (hadComposition) {
                     val raw = activeComposition.toString()
-                    val wordToCommit = when {
-                        currentMode == InputMode.BANGLA_PHONETIC ->
-                            candidates.firstOrNull() ?: phoneticEngine.transliterate(raw)
-                        currentMode == InputMode.ENGLISH && prefsRepo.settings.value.autoCorrect && candidates.size > 1 ->
-                            candidates[1]
-                        else -> raw
+                    val convStartNs = if (currentMode == InputMode.BANGLA_PHONETIC) System.nanoTime() else 0L
+                    val rawDisplay = if (currentMode == InputMode.BANGLA_PHONETIC) {
+                        phoneticEngine.transliterate(raw).also {
+                            TypingPerformanceTracker.recordBanglaConversion(System.nanoTime() - convStartNs, isPasswordField)
+                        }
+                    } else {
+                        raw
                     }
+                    val wordToCommit = suggestionEngine.resolveCommitText(
+                        rawInput = raw,
+                        mode = currentMode,
+                        settings = settings,
+                        precomputedTransliterated = rawDisplay
+                    )
                     if (raw.isNotBlank()) {
                         smartMemory.recordCorrection(raw, wordToCommit)
                     }
@@ -1397,23 +1542,29 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                     }
                     smartMemory.recordWordUsage(wordToCommit)
 
-                    ic.commitText(wordToCommit, 1)
-                    if (wordToCommit != raw) {
-                        val rawDisplay = if (currentMode == InputMode.BANGLA_PHONETIC) {
-                            phoneticEngine.transliterate(raw)
-                        } else {
-                            raw
-                        }
-                        if (rawDisplay != wordToCommit) {
-                            committedForUndo = "$wordToCommit " to "$rawDisplay "
-                        }
+                    ic.beginBatchEdit()
+                    ic.commitText("$wordToCommit ", 1)
+                    ic.endBatchEdit()
+
+                    TypingPerformanceTracker.recordWordCommitted(viaSuggestion = false, isSensitiveField = isPasswordField)
+                    if (wordToCommit != raw && rawDisplay != wordToCommit) {
+                        committedForUndo = "$wordToCommit " to "$rawDisplay "
                     }
                     lastCommittedWord = wordToCommit
                     resetComposition()
+                } else {
+                    ic.commitText(" ", 1)
                 }
 
-                ic.commitText(" ", 1)
-                val expanded = checkShortcutExpansion()
+                TypingPerformanceTracker.recordKeyCommit(
+                    mode = currentMode,
+                    latencyNs = System.nanoTime() - actionStartNs,
+                    enteredChars = 1,
+                    enteredGraphemes = 1,
+                    isSensitiveField = isPasswordField
+                )
+
+                val expanded = if (prefsRepo.shortcuts.value.isNotEmpty()) checkShortcutExpansion() else false
                 if (!expanded) {
                     if (committedForUndo != null) {
                         recordOperation(insertedText = committedForUndo.first, replacedText = committedForUndo.second)
@@ -1424,23 +1575,30 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                 hasSelectionState = false
                 isSelectionMode = false
                 selectionAnchor = -1
-                learnSurroundingWords(ic)
+                if (!hadComposition) {
+                    learnSurroundingWords(ic)
+                }
                 updateAutoCapitalization()
 
-                if (prefsRepo.settings.value.showSuggestions && !isPasswordField && lastCommittedWord.isNotEmpty()) {
-                    candidates = suggestionEngine.getSuggestions("", currentMode, lastCommittedWord = lastCommittedWord)
+                if (settings.showSuggestions && settings.nextWordPredictionEnabled && !isPasswordField && lastCommittedWord.isNotEmpty()) {
+                    candidates = suggestionEngine.getSuggestions(
+                        input = "",
+                        mode = currentMode,
+                        lastCommittedWord = lastCommittedWord,
+                        nextWordPredictionEnabled = true
+                    )
                 }
             }
 
             KeyboardLayouts.CODE_ENTER -> {
-                val selectedBefore = if (activeComposition.isEmpty()) getCurrentSelectedText(ic)?.toString().orEmpty() else ""
+                val selectedBefore = if (activeComposition.isEmpty() && hasSelectionState) {
+                    getCurrentSelectedText(ic)?.toString().orEmpty()
+                } else {
+                    ""
+                }
                 if (activeComposition.isNotEmpty()) {
-                    val wordToCommit = if (currentMode == InputMode.BANGLA_PHONETIC) {
-                        candidates.firstOrNull() ?: phoneticEngine.transliterate(activeComposition.toString())
-                    } else {
-                        activeComposition.toString()
-                    }
                     val raw = activeComposition.toString()
+                    val wordToCommit = suggestionEngine.resolveCommitText(raw, currentMode, settings)
                     if (raw.isNotBlank()) {
                         smartMemory.recordCorrection(raw, wordToCommit)
                     }
@@ -1450,6 +1608,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                     smartMemory.recordWordUsage(wordToCommit)
 
                     ic.commitText(wordToCommit, 1)
+                    TypingPerformanceTracker.recordWordCommitted(viaSuggestion = false, isSensitiveField = isPasswordField)
                     lastCommittedWord = wordToCommit
                     recordOperation(insertedText = wordToCommit, replacedText = "")
                     resetComposition()
@@ -1476,12 +1635,21 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
                         updateAutoCapitalization()
                     }
                 }
+                TypingPerformanceTracker.recordKeyCommit(
+                    mode = currentMode,
+                    latencyNs = System.nanoTime() - actionStartNs,
+                    enteredChars = 1,
+                    enteredGraphemes = 1,
+                    isSensitiveField = isPasswordField
+                )
             }
         }
     }
 
     private fun commitCandidate(candidate: String) {
+        val startNs = System.nanoTime()
         val ic = activeInputConnection() ?: return
+        val settings = prefsRepo.settings.value
         val raw = activeComposition.toString()
         val hadActiveWord = raw.isNotBlank()
         if (hadActiveWord) {
@@ -1499,6 +1667,14 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         }
 
         ic.commitText(candidate, 1)
+        TypingPerformanceTracker.recordWordCommitted(viaSuggestion = true, isSensitiveField = isPasswordField)
+        TypingPerformanceTracker.recordKeyCommit(
+            mode = currentMode,
+            latencyNs = System.nanoTime() - startNs,
+            enteredChars = candidate.length,
+            enteredGraphemes = if (currentMode.isBangla && !isPasswordField) BanglaUnicodeHelper.countGraphemeClusters(candidate) else candidate.length,
+            isSensitiveField = isPasswordField
+        )
         recordOperation(insertedText = candidate, replacedText = previousDisplay)
         lastCommittedWord = candidate.trim()
         resetComposition()
@@ -1506,8 +1682,13 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
             isShifted = false
         }
 
-        if (prefsRepo.settings.value.showSuggestions && !isPasswordField && lastCommittedWord.isNotEmpty()) {
-            candidates = suggestionEngine.getSuggestions("", currentMode, lastCommittedWord = lastCommittedWord)
+        if (settings.showSuggestions && settings.nextWordPredictionEnabled && !isPasswordField && lastCommittedWord.isNotEmpty()) {
+            candidates = suggestionEngine.getSuggestions(
+                input = "",
+                mode = currentMode,
+                lastCommittedWord = lastCommittedWord,
+                nextWordPredictionEnabled = true
+            )
         }
     }
 
@@ -1574,7 +1755,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     private fun learnSurroundingWords(ic: InputConnection) {
         try {
             val textBefore = ic.getTextBeforeCursor(60, 0)?.toString() ?: return
-            val words = textBefore.trim().split("\\s+".toRegex()).filter { it.isNotBlank() }
+            val words = textBefore.trim().split(WHITESPACE_REGEX).filter { it.isNotBlank() }
             if (words.size >= 2) {
                 val prev = words[words.size - 2]
                 val current = words[words.size - 1]
@@ -1693,7 +1874,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
     internal fun insertTextSnippet(snippet: String) {
         val ic = activeInputConnection() ?: return
         if (snippet.isEmpty()) return
-        val replaced = getCurrentSelectedText(ic)?.toString().orEmpty()
+        val replaced = if (hasSelectionState) getCurrentSelectedText(ic)?.toString().orEmpty() else ""
         if (activeComposition.isNotEmpty()) {
             val committed = getActiveComposingCommitText()
             if (committed.isNotEmpty()) {
@@ -1704,7 +1885,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         }
         ic.commitText(snippet, 1)
         recordOperation(insertedText = snippet, replacedText = replaced)
-        lastCommittedWord = snippet.trim().split(Regex("\\s+")).lastOrNull().orEmpty()
+        lastCommittedWord = snippet.trim().split(WHITESPACE_REGEX).lastOrNull().orEmpty()
         hasSelectionState = false
         isSelectionMode = false
         selectionAnchor = -1
@@ -1716,8 +1897,9 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         val ic = activeInputConnection() ?: return
         val clean = word.trim()
         if (clean.isEmpty()) return
+        val settings = prefsRepo.settings.value
 
-        val replaced = getCurrentSelectedText(ic)?.toString().orEmpty()
+        val replaced = if (hasSelectionState) getCurrentSelectedText(ic)?.toString().orEmpty() else ""
         if (activeComposition.isNotEmpty()) {
             val committed = getActiveComposingCommitText()
             if (committed.isNotEmpty()) {
@@ -1730,6 +1912,7 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         val prefixSpace = if (before.isNotEmpty() && !before.last().isWhitespace() && replaced.isEmpty()) " " else ""
         val commitStr = "$prefixSpace$clean "
         ic.commitText(commitStr, 1)
+        TypingPerformanceTracker.recordWordCommitted(viaSuggestion = false, isSensitiveField = isPasswordField)
         recordOperation(insertedText = commitStr, replacedText = replaced)
         if (lastCommittedWord.isNotBlank()) {
             smartMemory.recordNextWord(lastCommittedWord, clean)
@@ -1740,9 +1923,13 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         isSelectionMode = false
         selectionAnchor = -1
 
-        if (prefsRepo.settings.value.showSuggestions && !isPasswordField) {
+        if (settings.showSuggestions && !isPasswordField) {
             val altList = alternatives.filter { it.isNotBlank() && it != clean }.take(4)
-            val nextWords = suggestionEngine.getSuggestions("", currentMode, lastCommittedWord = clean)
+            val nextWords = if (settings.nextWordPredictionEnabled) {
+                suggestionEngine.getSuggestions("", currentMode, lastCommittedWord = clean, nextWordPredictionEnabled = true)
+            } else {
+                emptyList()
+            }
             candidates = (altList + nextWords).distinct().take(6)
         }
         updateAutoCapitalization()
@@ -1754,15 +1941,17 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
         if (shortcuts.isEmpty()) return false
 
         val textBefore = ic.getTextBeforeCursor(30, 0)?.toString() ?: return false
-        val words = textBefore.trimEnd().split("\\s+".toRegex())
+        val words = textBefore.trimEnd().split(WHITESPACE_REGEX)
         val lastWord = words.lastOrNull() ?: return false
 
         val match = shortcuts.find { it.trigger.equals(lastWord, ignoreCase = true) }
         if (match != null) {
             val deleteCount = lastWord.length + 1
             val expandedText = match.expansion + " "
+            ic.beginBatchEdit()
             ic.deleteSurroundingText(deleteCount, 0)
             ic.commitText(expandedText, 1)
+            ic.endBatchEdit()
             recordOperation(insertedText = expandedText, replacedText = "$lastWord ")
             return true
         }
@@ -1771,6 +1960,18 @@ class OkkhorInputMethodService : InputMethodService(), LifecycleOwner, ViewModel
 
     companion object {
         private const val MAX_HISTORY_STEPS = 30
+        private val WHITESPACE_REGEX = Regex("\\s+")
+
+        private val QWERTY_GRID = HashMap<Char, Pair<Int, Int>>(32).apply {
+            "qwertyuiop".forEachIndexed { col, ch -> put(ch, 0 to col) }
+            "asdfghjkl".forEachIndexed { col, ch -> put(ch, 1 to col) }
+            "zxcvbnm".forEachIndexed { col, ch -> put(ch, 2 to col + 1) }
+        }
+
+        private fun qwertyGridPos(key: String): Pair<Int, Int> {
+            if (key.length != 1) return -1 to -1
+            return QWERTY_GRID[key[0].lowercaseChar()] ?: (-1 to -1)
+        }
     }
 }
 

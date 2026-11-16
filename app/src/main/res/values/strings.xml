@@ -52,9 +52,15 @@
     <string name="pref_show_number_row">Always Show Number Row</string>
     <string name="pref_show_number_row_desc">Display dedicated number row on top of keyboard</string>
     <string name="pref_show_suggestions">Word Suggestions &amp; Candidates</string>
-    <string name="pref_show_suggestions_desc">Display transliteration candidates and next-word predictions</string>
+    <string name="pref_show_suggestions_desc">Display transliteration candidates and matching completions</string>
+    <string name="pref_next_word_prediction">Next-Word Prediction</string>
+    <string name="pref_next_word_prediction_desc">Predict likely next words after Space using local phrase memory</string>
     <string name="pref_autocorrect">Conservative Autocorrect</string>
-    <string name="pref_autocorrect_desc">Fix minor typos automatically without replacing names or regional words</string>
+    <string name="pref_autocorrect_desc">Fix minor typos automatically without replacing exact Avro words or names</string>
+    <string name="pref_ergonomics_title">Typing Ergonomics &amp; Key Spacing</string>
+    <string name="pref_ergonomics_desc">Optimize height and inter-key gaps for 40+ WPM accuracy</string>
+    <string name="perf_lab_title">Typing Performance Lab</string>
+    <string name="perf_lab_subtitle">Measure speed, accuracy, touch latency &amp; Bangla benchmarks</string>
     <string name="pref_vibration">Haptic Feedback on Keypress</string>
     <string name="pref_vibration_desc">Gentle vibration when tapping keys</string>
     <string name="pref_sound">Sound on Keypress</string>

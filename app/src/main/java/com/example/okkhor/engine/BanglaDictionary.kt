@@ -293,7 +293,7 @@ object BanglaDictionary {
         "chand" to listOf("চাঁদ"),
         "tara" to listOf("তারা"),
 
-        // Time
+        // Time & Everyday Conversational Words
         "shomoy" to listOf("সময়"),
         "somoy" to listOf("সময়"),
         "din" to listOf("দিন"),
@@ -303,38 +303,122 @@ object BanglaDictionary {
         "kal" to listOf("কাল"),
         "kalke" to listOf("কালকে"),
         "ekhon" to listOf("এখন"),
+        "ekhonoi" to listOf("এখনই"),
         "tokhon" to listOf("তখন"),
-        "shobshomoy" to listOf("সবসময়")
+        "shobshomoy" to listOf("সবসময়"),
+        "khobor" to listOf("খবর"),
+        "shobaike" to listOf("সবাইকে"),
+        "sobaike" to listOf("সবাইকে"),
+        "banglay" to listOf("বাংলায়"),
+        "shesh" to listOf("শেষ"),
+        "sesh" to listOf("শেষ"),
+        "fire" to listOf("ফিরে"),
+        "phire" to listOf("ফিরে"),
+        "egie" to listOf("এগিয়ে"),
+        "egiye" to listOf("এগিয়ে"),
+        "jachhe" to listOf("যাচ্ছে"),
+        "jacche" to listOf("যাচ্ছে"),
+        "biggyan" to listOf("বিজ্ঞান"),
+        "biggan" to listOf("বিজ্ঞান"),
+        "deshe" to listOf("দেশে"),
+        "protidin" to listOf("প্রতিদিন"),
+        "shomoshsha" to listOf("সমস্যা"),
+        "somossa" to listOf("সমস্যা"),
+        "dorkar" to listOf("দরকার"),
+        "lagbe" to listOf("লাগবে"),
+        "parbo" to listOf("পারব", "পারবো"),
+        "pare" to listOf("পারে"),
+        "korche" to listOf("করছে"),
+        "bolche" to listOf("বলছে")
     )
+
+    private val HIGH_FREQUENCY_ROMAN_ORDER: Map<String, Int> = listOf(
+        "ami", "amar", "amra", "amader", "tumi", "tomar", "apni", "apnar",
+        "bangla", "bangladesh", "banglay", "baba", "bari", "basha", "bhalo", "valo",
+        "kemon", "ki", "kothay", "keno", "khobor", "khub", "kaj", "kotha", "korchi",
+        "shob", "shobai", "shobaike", "shubho", "shokal", "shesh", "sathe", "shathe",
+        "dhonnobad", "dekha", "din", "ajke", "ekhon", "onek", "achhi", "achi", "acho", "achen"
+    ).withIndex().associate { it.value to it.index }
+
+    private val HIGH_FREQUENCY_BANGLA_ORDER: Map<String, Int> = listOf(
+        "আমি", "আমার", "আমরা", "তুমি", "তোমার", "আপনি", "আপনার", "বাংলা", "বাংলাদেশ",
+        "বাংলায়", "বাবা", "বাড়ি", "বাসা", "ভালো", "কেমন", "কি", "খবর", "খুব", "কাজ",
+        "সব", "সবাই", "সবাইকে", "শুভ", "সকাল", "শেষ", "ধন্যবাদ", "দেখা", "আজকে", "এখন", "অনেক", "আছি"
+    ).withIndex().associate { it.value to it.index }
 
     // Prefix list for autocomplete and next-word suggestions
     val ALL_WORDS: List<String> = COMMON_WORD_MAP.values.flatten().distinct()
 
+    private val ENTRIES_BY_FIRST_CHAR: Map<Char, List<Pair<String, List<String>>>> =
+        COMMON_WORD_MAP.entries
+            .groupBy { it.key.first() }
+            .mapValues { (_, list) ->
+                list.map { it.key to it.value }
+                    .sortedWith(
+                        compareBy<Pair<String, List<String>>>(
+                            { HIGH_FREQUENCY_ROMAN_ORDER[it.first] ?: Int.MAX_VALUE },
+                            { it.first.length }
+                        )
+                    )
+            }
+
+    private val BANGLA_WORDS_BY_FIRST_CHAR: Map<Char, List<String>> =
+        ALL_WORDS
+            .filter { it.isNotEmpty() }
+            .groupBy { it.first() }
+            .mapValues { (_, words) ->
+                words.sortedWith(
+                    compareBy<String>(
+                        { HIGH_FREQUENCY_BANGLA_ORDER[it] ?: Int.MAX_VALUE },
+                        { it.length }
+                    )
+                )
+            }
+
     fun findWordSuggestions(query: String, maxResults: Int = 5): List<String> {
-        if (query.isBlank()) return emptyList()
-        val queryLower = query.lowercase().trim()
+        if (query.isBlank() || maxResults <= 0) return emptyList()
+        val trimmed = query.trim()
+        val results = LinkedHashSet<String>(maxResults * 2)
 
-        // 1. Exact match in transliteration map
-        val exactMatches = COMMON_WORD_MAP[queryLower] ?: emptyList()
-
-        // 2. Starts with query in keys
-        val prefixMatches = COMMON_WORD_MAP.entries
-            .filter { it.key.startsWith(queryLower) && it.key != queryLower }
-            .flatMap { it.value }
-            .distinct()
-
-        // 3. Bengali text prefix matches
-        val banglaMatches = if (BanglaUnicodeHelper.isBanglaText(query)) {
-            ALL_WORDS.filter { it.startsWith(query) && it != query }
-        } else {
-            emptyList()
+        if (BanglaUnicodeHelper.isBanglaText(trimmed)) {
+            val firstBn = trimmed.firstOrNull() ?: return emptyList()
+            val bucket = BANGLA_WORDS_BY_FIRST_CHAR[firstBn] ?: return emptyList()
+            for (word in bucket) {
+                if (word != trimmed && word.startsWith(trimmed)) {
+                    results.add(word)
+                    if (results.size >= maxResults) break
+                }
+            }
+            return results.toList()
         }
 
-        return (exactMatches + banglaMatches + prefixMatches).distinct().take(maxResults)
+        val queryLower = trimmed.lowercase()
+
+        // 1. Exact match in transliteration map (O(1))
+        COMMON_WORD_MAP[queryLower]?.forEach { word ->
+            results.add(word)
+            if (results.size >= maxResults) return results.toList()
+        }
+
+        // 2. Prefix match in indexed bucket sorted by shortest Roman key
+        val bucket = ENTRIES_BY_FIRST_CHAR[queryLower[0]]
+        if (bucket != null) {
+            for ((key, words) in bucket) {
+                if (key.length > queryLower.length && key.startsWith(queryLower)) {
+                    for (word in words) {
+                        results.add(word)
+                        if (results.size >= maxResults) return results.toList()
+                    }
+                }
+            }
+        }
+
+        return results.toList()
     }
 
     fun getNextWordPredictions(lastWord: String, maxResults: Int = 4): List<String> {
         val clean = lastWord.trim()
-        return NEXT_WORD_PREDICTIONS[clean] ?: emptyList()
+        val predictions = NEXT_WORD_PREDICTIONS[clean] ?: return emptyList()
+        return if (predictions.size <= maxResults) predictions else predictions.take(maxResults)
     }
 }

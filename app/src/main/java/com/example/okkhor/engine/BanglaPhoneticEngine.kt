@@ -223,8 +223,35 @@ class BanglaPhoneticEngine {
             "W" to "ওয়"
         )
 
+        private fun indexPairs(pairs: List<Pair<String, String>>): Array<Array<Pair<String, String>>?> {
+            val table = Array<MutableList<Pair<String, String>>?>(128) { null }
+            for (pair in pairs) {
+                val code = pair.first[0].code
+                if (code < 128) {
+                    val bucket = table[code] ?: mutableListOf<Pair<String, String>>().also { table[code] = it }
+                    bucket.add(pair)
+                }
+            }
+            return Array(128) { idx -> table[idx]?.toTypedArray() }
+        }
+
+        private val INDEPENDENT_VOWELS_BY_CHAR = indexPairs(INDEPENDENT_VOWELS)
+        private val VOWEL_SIGNS_BY_CHAR = indexPairs(VOWEL_SIGNS)
+        private val SPECIAL_CONJUNCTS_BY_CHAR = indexPairs(SPECIAL_CONJUNCTS)
+        private val CONSONANTS_BY_CHAR = indexPairs(CONSONANTS)
+        private val SPECIAL_CONJUNCT_KEYS: HashSet<String> = SPECIAL_CONJUNCTS.mapTo(HashSet()) { it.first }
+
+        private val DEFAULT_INSTANCE = BanglaPhoneticEngine()
+
         fun transliterate(input: String): String {
-            return BanglaPhoneticEngine().transliterate(input)
+            return DEFAULT_INSTANCE.transliterate(input)
+        }
+    }
+
+    private val cacheLock = Any()
+    private val cache = object : LinkedHashMap<String, String>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
+            return size > 256
         }
     }
 
@@ -234,33 +261,49 @@ class BanglaPhoneticEngine {
     fun transliterate(input: String): String {
         if (input.isEmpty()) return ""
 
+        if (input.length <= 24) {
+            synchronized(cacheLock) {
+                cache[input]?.let { return it }
+            }
+        }
+
+        val result = transliterateUncached(input)
+        if (input.length <= 24) {
+            synchronized(cacheLock) {
+                cache[input] = result
+            }
+        }
+        return result
+    }
+
+    private fun transliterateUncached(input: String): String {
         // Preserve uppercase acronyms typed with Caps Lock or Shift (e.g. "OK", "USA", "SMS", "AI", "PIN")
-        if (input.length >= 2 && input.all { it.isUpperCase() && it in 'A'..'Z' }) {
+        if (input.length >= 2 && isAllAsciiUpper(input)) {
             if (input == "OK") return "OK"
-            val isAvroConjunct = SPECIAL_CONJUNCTS.any { it.first == input }
-            if (!isAvroConjunct) {
+            if (input !in SPECIAL_CONJUNCT_KEYS) {
                 val dictWord = BanglaDictionary.COMMON_WORD_MAP[input.lowercase()]?.firstOrNull()
                 return dictWord ?: input
             }
         }
 
         // Direct dictionary match for authentic Avro phonetic vocabulary
-        val dictWord = BanglaDictionary.COMMON_WORD_MAP[input.lowercase()]?.firstOrNull()
+        val lowerCandidate = if (hasUpperAscii(input)) input.lowercase() else input
+        val dictWord = BanglaDictionary.COMMON_WORD_MAP[lowerCandidate]?.firstOrNull()
         if (dictWord != null) {
             return dictWord
         }
 
-        val sb = StringBuilder()
+        val sb = StringBuilder(input.length * 2)
         var i = 0
         val len = input.length
         var prevWasConsonant = false
-        var lastConsonantGlyph = ""
 
         while (i < len) {
-            val remaining = input.substring(i)
+            val c = input[i]
+            val remLen = len - i
 
             // 1. Explicit Hasanta / Virama: ",,"
-            if (remaining.startsWith(",,")) {
+            if (c == ',' && remLen >= 2 && input[i + 1] == ',') {
                 sb.append(BanglaUnicodeHelper.HASANTA)
                 i += 2
                 prevWasConsonant = true
@@ -268,7 +311,7 @@ class BanglaPhoneticEngine {
             }
 
             // 2. Khanda-Ta: "t`" or "t'"
-            if (remaining.startsWith("t`") || remaining.startsWith("t'")) {
+            if (c == 't' && remLen >= 2 && (input[i + 1] == '`' || input[i + 1] == '\'')) {
                 sb.append("ৎ")
                 i += 2
                 prevWasConsonant = false
@@ -276,7 +319,7 @@ class BanglaPhoneticEngine {
             }
 
             // 3. Anusvara: "ng" (when at end of word or before non-vowels)
-            if (remaining.startsWith("ng") && (remaining.length == 2 || remaining[2] !in "aeiouAEIOU")) {
+            if (c == 'n' && remLen >= 2 && input[i + 1] == 'g' && (remLen == 2 || !isAsciiVowel(input[i + 2]))) {
                 sb.append("ং")
                 i += 2
                 prevWasConsonant = false
@@ -284,14 +327,14 @@ class BanglaPhoneticEngine {
             }
 
             // 4. Chandrabindu: "^"
-            if (remaining.startsWith("^")) {
+            if (c == '^') {
                 sb.append(BanglaUnicodeHelper.CHANDRABINDU)
                 i += 1
                 continue
             }
 
             // 5. Bisarga: ":"
-            if (remaining.startsWith(":")) {
+            if (c == ':') {
                 sb.append(BanglaUnicodeHelper.BISARGA)
                 i += 1
                 prevWasConsonant = false
@@ -299,7 +342,7 @@ class BanglaPhoneticEngine {
             }
 
             // 6. Bengali Dari / Danda: "|"
-            if (remaining.startsWith("|")) {
+            if (c == '|') {
                 sb.append(BanglaUnicodeHelper.BENGALI_DANDA)
                 i += 1
                 prevWasConsonant = false
@@ -307,16 +350,14 @@ class BanglaPhoneticEngine {
             }
 
             // 7. Reph (র্): 'r' followed by a consonant (only if preceded by vowel or word start)
-            if (remaining.startsWith("r") && remaining.length >= 2 && !prevWasConsonant) {
-                val nextChar = remaining[1]
+            if (c == 'r' && remLen >= 2 && !prevWasConsonant) {
+                val nextChar = input[i + 1]
                 if (isConsonantChar(nextChar) && nextChar != 'r') {
-                    val sub = remaining.substring(1)
-                    val matchCons = matchConsonantOrConjunct(sub)
+                    val matchCons = matchConsonantOrConjunctAt(input, i + 1)
                     if (matchCons != null) {
                         sb.append("র্").append(matchCons.second)
-                        i += 1 + matchCons.first
+                        i += 1 + matchCons.first.length
                         prevWasConsonant = true
-                        lastConsonantGlyph = matchCons.second
                         continue
                     }
                 }
@@ -324,78 +365,71 @@ class BanglaPhoneticEngine {
 
             // 8. If previous was consonant, check for attached Kar, Ya-phala, Ra-phala, or Ba-phala
             if (prevWasConsonant) {
-                // Ya-phala: 'y' or 'Z'
-                if (remaining.startsWith("y") || remaining.startsWith("Z")) {
-                    sb.append(BanglaUnicodeHelper.HASANTA).append("য")
+                if (c == 'y' || c == 'Z') {
+                    sb.append(BanglaUnicodeHelper.HASANTA).append('য')
                     i += 1
                     prevWasConsonant = true
                     continue
                 }
 
-                // Ra-phala: 'r' immediately after a consonant (e.g. k + r -> ক্র, b + r -> ব্র, t + r -> ত্র)
-                if (remaining.startsWith("r")) {
-                    sb.append(BanglaUnicodeHelper.HASANTA).append("র")
+                if (c == 'r') {
+                    sb.append(BanglaUnicodeHelper.HASANTA).append('র')
                     i += 1
                     prevWasConsonant = true
                     continue
                 }
 
-                // Ba-phala: 'w' immediately after a consonant (e.g. d + w -> দ্ব, s + w -> স্ব)
-                if (remaining.startsWith("w")) {
-                    sb.append(BanglaUnicodeHelper.HASANTA).append("ব")
+                if (c == 'w') {
+                    sb.append(BanglaUnicodeHelper.HASANTA).append('ব')
                     i += 1
                     prevWasConsonant = true
                     continue
                 }
 
-                // Vowel sign (কার) attached to consonant
-                val matchedVowel = matchVowelSign(remaining)
+                val matchedVowel = matchFromTableAt(VOWEL_SIGNS_BY_CHAR, input, i)
                 if (matchedVowel != null) {
                     sb.append(matchedVowel.second)
-                    i += matchedVowel.first
+                    i += matchedVowel.first.length
                     prevWasConsonant = false
                     continue
                 }
             }
 
             // 9. Check for Multi-character Conjuncts (e.g. kkh, shch, ntr, tr, nd, etc.)
-            val matchedConjunct = matchSpecialConjunct(remaining)
+            val matchedConjunct = matchFromTableAt(SPECIAL_CONJUNCTS_BY_CHAR, input, i)
             if (matchedConjunct != null) {
                 if (prevWasConsonant) {
                     sb.append(BanglaUnicodeHelper.HASANTA)
                 }
                 sb.append(matchedConjunct.second)
-                i += matchedConjunct.first
+                i += matchedConjunct.first.length
                 prevWasConsonant = true
-                lastConsonantGlyph = matchedConjunct.second
                 continue
             }
 
-            // 10. Check for Single or Digraph Consonants (e.g. k, kh, g, gh, etc.)
-            val matchedConsonant = matchConsonant(remaining)
+            // 10. Check for Single or Digraph Consonants
+            val matchedConsonant = matchFromTableAt(CONSONANTS_BY_CHAR, input, i)
             if (matchedConsonant != null) {
                 if (prevWasConsonant) {
-                    // Automatic conjunct joiner for consecutive consonants!
                     sb.append(BanglaUnicodeHelper.HASANTA)
                 }
                 sb.append(matchedConsonant.second)
-                i += matchedConsonant.first
+                i += matchedConsonant.first.length
                 prevWasConsonant = true
-                lastConsonantGlyph = matchedConsonant.second
                 continue
             }
 
             // 11. Independent Vowel (at word-start or after a vowel)
-            val matchedIndVowel = matchIndependentVowel(remaining)
+            val matchedIndVowel = matchFromTableAt(INDEPENDENT_VOWELS_BY_CHAR, input, i)
             if (matchedIndVowel != null) {
                 sb.append(matchedIndVowel.second)
-                i += matchedIndVowel.first
+                i += matchedIndVowel.first.length
                 prevWasConsonant = false
                 continue
             }
 
-            // Fallback for non-alphabetic or untransliterated characters (e.g. digits, punctuation)
-            sb.append(input[i])
+            // Fallback for non-alphabetic or untransliterated characters
+            sb.append(c)
             prevWasConsonant = false
             i++
         }
@@ -403,47 +437,52 @@ class BanglaPhoneticEngine {
         return sb.toString()
     }
 
-    private fun matchSpecialConjunct(s: String): Pair<Int, String>? {
-        for ((trigger, glyph) in SPECIAL_CONJUNCTS) {
-            if (s.startsWith(trigger)) {
-                return Pair(trigger.length, glyph)
+    private fun matchFromTableAt(
+        table: Array<Array<Pair<String, String>>?>,
+        input: String,
+        offset: Int
+    ): Pair<String, String>? {
+        val code = input[offset].code
+        if (code >= 128) return null
+        val bucket = table[code] ?: return null
+        val remaining = input.length - offset
+        for (idx in bucket.indices) {
+            val pair = bucket[idx]
+            val trigger = pair.first
+            val tLen = trigger.length
+            if (tLen <= remaining && input.regionMatches(offset, trigger, 0, tLen, ignoreCase = false)) {
+                return pair
             }
         }
         return null
     }
 
-    private fun matchConsonant(s: String): Pair<Int, String>? {
-        for ((trigger, glyph) in CONSONANTS) {
-            if (s.startsWith(trigger)) {
-                return Pair(trigger.length, glyph)
-            }
-        }
-        return null
-    }
-
-    private fun matchConsonantOrConjunct(s: String): Pair<Int, String>? {
-        return matchSpecialConjunct(s) ?: matchConsonant(s)
-    }
-
-    private fun matchVowelSign(s: String): Pair<Int, String>? {
-        for ((k, sign) in VOWEL_SIGNS) {
-            if (s.startsWith(k)) {
-                return Pair(k.length, sign)
-            }
-        }
-        return null
-    }
-
-    private fun matchIndependentVowel(s: String): Pair<Int, String>? {
-        for ((k, vowel) in INDEPENDENT_VOWELS) {
-            if (s.startsWith(k)) {
-                return Pair(k.length, vowel)
-            }
-        }
-        return null
+    private fun matchConsonantOrConjunctAt(input: String, offset: Int): Pair<String, String>? {
+        return matchFromTableAt(SPECIAL_CONJUNCTS_BY_CHAR, input, offset)
+            ?: matchFromTableAt(CONSONANTS_BY_CHAR, input, offset)
     }
 
     private fun isConsonantChar(c: Char): Boolean {
-        return (c in 'a'..'z' || c in 'A'..'Z') && c !in "aeiouAEIOU"
+        return (c in 'a'..'z' || c in 'A'..'Z') && !isAsciiVowel(c)
+    }
+
+    private fun isAsciiVowel(c: Char): Boolean {
+        return c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' ||
+            c == 'A' || c == 'E' || c == 'I' || c == 'O' || c == 'U'
+    }
+
+    private fun isAllAsciiUpper(s: String): Boolean {
+        for (i in s.indices) {
+            val c = s[i]
+            if (c !in 'A'..'Z') return false
+        }
+        return true
+    }
+
+    private fun hasUpperAscii(s: String): Boolean {
+        for (i in s.indices) {
+            if (s[i] in 'A'..'Z') return true
+        }
+        return false
     }
 }
